@@ -1,0 +1,116 @@
+<div data-page-title="{{ page_title }}" id="returns-page-root">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4">
+        <div>
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb mb-1 small">
+                    <li class="breadcrumb-item text-muted">Отчёты</li>
+                    <li class="breadcrumb-item active" aria-current="page">Возвраты</li>
+                </ol>
+            </nav>
+            <h1 class="h3 mb-0">Возвраты</h1>
+        </div>
+        {% if has_ozon %}
+        <button type="button" class="btn btn-primary" id="btn-refresh-returns"
+                title="Обновить данные из Ozon">
+            <span class="spinner-border spinner-border-sm d-none me-1" id="returns-refresh-spinner" role="status"></span>
+            Обновить
+        </button>
+        {% endif %}
+    </div>
+
+    {% if not has_ozon %}
+    <div class="alert alert-warning py-2">
+        Для загрузки возвратов укажите <strong>Client-Id</strong> и <strong>Api-Key</strong> в
+        <a href="{{ url_for('profile.index') }}">профиле</a>.
+    </div>
+    {% endif %}
+
+    <div class="card shadow-sm mb-4" id="returns-toolbar"
+         data-date-from="{{ date_from.isoformat() if date_from else '' }}"
+         data-date-to="{{ date_to.isoformat() if date_to else '' }}">
+        <div class="card-body">
+            <div class="row g-3 align-items-end">
+                <div class="col-md-4 col-lg-3">
+                    <label class="form-label" for="returns-date-range">Период (дата статуса)</label>
+                    <input type="text" class="form-control" id="returns-date-range"
+                           placeholder="Выберите даты" autocomplete="off"
+                           data-date-from="{{ date_from.isoformat() if date_from else '' }}"
+                           data-date-to="{{ date_to.isoformat() if date_to else '' }}"
+                           {% if not has_ozon %}disabled{% endif %}>
+                </div>
+                <div class="col-auto">
+                    <button type="button" class="btn btn-outline-primary" id="btn-load-returns"
+                            {% if not has_ozon %}disabled{% endif %}>
+                        Показать
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% if load_error %}
+    <div class="alert alert-danger py-2">{{ load_error }}</div>
+    {% endif %}
+
+    {% if has_data %}
+    <div class="card shadow-sm mb-4">
+        <div class="card-body py-3">
+            <div class="stock-summary-item d-inline-block">
+                <div class="stock-summary-value">{{ summary.return_count }}</div>
+                <div class="stock-summary-label">Возвратов за период</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="products-table-wrap">
+        <table class="table table-hover align-middle bg-white rounded shadow-sm mb-0 products-table returns-table">
+            <thead class="table-light">
+                <tr>
+                    <th class="text-center text-nowrap">Схема</th>
+                    <th class="text-center text-nowrap">Дата статуса</th>
+                    <th class="text-center text-nowrap">Номер заявки</th>
+                    <th class="text-center text-nowrap">Статус</th>
+                    <th class="text-center">Фото</th>
+                    <th class="text-center products-col-product">Товар</th>
+                    <th class="text-center">Причина</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in returns %}
+                <tr>
+                    <td class="text-center text-nowrap">
+                        <span class="badge text-bg-light border">{{ item.scheme }}</span>
+                    </td>
+                    <td class="text-center text-nowrap small">{{ item.status_date_display }}</td>
+                    <td class="text-center text-nowrap small">
+                        <div class="returns-request-number font-monospace">{{ item.application_number }}</div>
+                        <div class="returns-request-type">{{ item.application_type }}</div>
+                    </td>
+                    <td class="text-center text-nowrap small">
+                        <span class="return-status return-status--{{ item.status_tone }}">{{ item.status }}</span>
+                    </td>
+                    <td class="text-center">
+                        {% if item.thumbnail_url %}
+                        <img src="{{ item.thumbnail_url }}" alt="" class="product-thumb" loading="lazy"
+                             referrerpolicy="no-referrer">
+                        {% else %}
+                        <span class="text-muted small">—</span>
+                        {% endif %}
+                    </td>
+                    <td class="products-col-product">
+                        <div class="product-cell-title" title="{{ item.name }}">{{ item.name }}</div>
+                        <div class="product-cell-meta font-monospace">{{ item.offer_id }}</div>
+                        <div class="product-cell-meta font-monospace">{{ item.barcode }}</div>
+                    </td>
+                    <td class="small returns-reason-cell">{{ item.reason }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% elif has_ozon and not load_error %}
+    <div class="alert alert-light border text-center text-muted mb-0">
+        За выбранный период возвратов не найдено.
+    </div>
+    {% endif %}
+</div>

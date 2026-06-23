@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Редактирование обновлений — Ozon Manager{% endblock %}
+{% block content %}
+<div class="mb-4 d-flex justify-content-between align-items-center">
+    <div>
+        <a href="{{ url_for('main.changelog') }}" class="text-decoration-none small">&larr; К журналу</a>
+        <h1 class="h3 mt-2 mb-0">Редактирование обновлений</h1>
+    </div>
+</div>
+{% with messages = get_flashed_messages(with_categories=true) %}
+{% if messages %}{% for category, message in messages %}
+<div class="alert alert-{{ category }} py-2">{{ message }}</div>
+{% endfor %}{% endif %}{% endwith %}
+<div class="row g-4">
+    <div class="col-lg-5">
+        <div class="card shadow-sm">
+            <div class="card-header">Новая версия</div>
+            <div class="card-body">
+                <form method="post">
+                    <div class="mb-3">
+                        <label class="form-label" for="version">Версия</label>
+                        <input class="form-control" id="version" name="version" placeholder="1.0.1" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="released_at">Дата</label>
+                        <input class="form-control" id="released_at" name="released_at" type="date" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="items">Изменения</label>
+                        <textarea class="form-control" id="items" name="items" rows="8" required
+                                  placeholder="Каждый пункт с новой строки"></textarea>
+                        <div class="form-text">Один пункт — одна строка.</div>
+                    </div>
+                    <button class="btn btn-primary w-100" type="submit">Опубликовать</button>
+                </form>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-7">
+        <div class="card shadow-sm">
+            <div class="card-header">Опубликованные версии</div>
+            <ul class="list-group list-group-flush">
+            {% for r in releases %}
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                    <div>
+                        <strong>v{{ r.version }}</strong>
+                        <span class="text-muted small">от {{ r.released_at.strftime('%d.%m.%Y') }}</span>
+                        <div class="small text-muted">{{ r.items_list|length }} пункт(ов)</div>
+                    </div>
+                    <div class="d-flex gap-1">
+                        <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.edit_release', note_id=r.id) }}">Изменить</a>
+                        <form method="post" action="{{ url_for('admin.delete_release', note_id=r.id) }}" class="d-inline"
+                              onsubmit="return confirm('Удалить версию {{ r.version }}?');">
+                            <button type="submit" class="btn btn-sm btn-outline-danger">Удалить</button>
+                        </form>
+                    </div>
+                </li>
+            {% else %}
+                <li class="list-group-item text-muted">Нет версий</li>
+            {% endfor %}
+            </ul>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+{% block title %}Пользователи — Ozon Manager{% endblock %}
+{% block extra_head %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3 mb-0">Пользователи</h1>
+</div>
+{% with messages = get_flashed_messages(with_categories=true) %}
+{% if messages %}
+{% for category, message in messages %}
+<div class="alert alert-{{ category }} py-2">{{ message }}</div>
+{% endfor %}
+{% endif %}
+{% endwith %}
+<div class="row g-4">
+    <div class="col-lg-4 col-xl-3">
+        <div class="card shadow-sm">
+            <div class="card-header">Добавить пользователя</div>
+            <div class="card-body">
+                <form method="post" action="{{ url_for('admin.users') }}">
+                    <div class="mb-3">
+                        <label class="form-label" for="display_name">Имя</label>
+                        <input class="form-control" id="display_name" name="display_name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="username">Логин</label>
+                        <input class="form-control" id="username" name="username" required minlength="3">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="email">Email</label>
+                        <input class="form-control" id="email" name="email" type="email" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="password">Пароль</label>
+                        <input class="form-control" id="password" name="password" type="password" required minlength="6">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="role">Роль</label>
+                        <select class="form-select" id="role" name="role" required>
+                            <option value="user">Пользователь</option>
+                            <option value="admin">Администратор</option>
+                        </select>
+                    </div>
+                    <button class="btn btn-primary w-100" type="submit">Создать</button>
+                </form>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-8 col-xl-9">
+        <div class="card shadow-sm">
+            <div class="card-header">Список пользователей</div>
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead>
+                        <tr>
+                            <th>Имя</th>
+                            <th>Логин</th>
+                            <th>Email</th>
+                            <th>Роль</th>
+                            <th>Аккаунт</th>
+                            <th>Ozon API</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    {% for u in users %}
+                        <tr>
+                            <td>{{ u.display_name or '—' }}</td>
+                            <td>{{ u.username }}</td>
+                            <td class="small">{{ u.email }}</td>
+                            <td>
+                                {% if u.is_admin %}
+                                <span class="badge text-bg-dark">Админ</span>
+                                {% else %}
+                                <span class="badge text-bg-secondary">Пользователь</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if u.is_active %}
+                                <span class="badge text-bg-success">Активен</span>
+                                {% else %}
+                                <span class="badge text-bg-warning text-dark">Ожидает</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if u.ozon_is_active() %}
+                                <span class="text-success">Активен</span>
+                                {% elif u.has_ozon_credentials() %}
+                                <span class="text-secondary">Неактивен</span>
+                                {% else %}
+                                <span class="text-muted">Не настроен</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-end text-nowrap">
+                                <div class="d-inline-flex gap-1 align-items-center table-row-actions">
+                                {% if not u.is_active %}
+                                <form method="post" action="{{ url_for('admin.activate_user', user_id=u.id) }}" class="d-inline">
+                                    <button type="submit" class="btn btn-sm btn-light border text-success" title="Активировать"
+                                            aria-label="Активировать">
+                                        <i class="bi bi-unlock"></i>
+                                    </button>
+                                </form>
+                                {% elif u.id != current_user.id %}
+                                <form method="post" action="{{ url_for('admin.deactivate_user', user_id=u.id) }}" class="d-inline"
+                                      onsubmit="return confirm('Заблокировать пользователя {{ u.username }}?');">
+                                    <button type="submit" class="btn btn-sm btn-light border text-secondary" title="Заблокировать"
+                                            aria-label="Заблокировать">
+                                        <i class="bi bi-lock-fill"></i>
+                                    </button>
+                                </form>
+                                {% endif %}
+                                <a class="btn btn-sm btn-light border" title="Изменить"
+                                   href="{{ url_for('admin.edit_user', user_id=u.id) }}"
+                                   aria-label="Изменить">
+                                    <i class="bi bi-pencil"></i>
+                                </a>
+                                {% if u.id != current_user.id %}
+                                <form method="post" action="{{ url_for('admin.delete_user', user_id=u.id) }}" class="d-inline"
+                                      onsubmit="return confirm('Удалить пользователя {{ u.username }}?');">
+                                    <button type="submit" class="btn btn-sm btn-light border text-danger" title="Удалить"
+                                            aria-label="Удалить">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </form>
+                                {% endif %}
+                                </div>
+                            </td>
+                        </tr>
+                    {% else %}
+                        <tr><td colspan="7" class="text-muted text-center py-4">Нет пользователей</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

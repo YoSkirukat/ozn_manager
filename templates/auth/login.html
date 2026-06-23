@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Вход — Ozon Manager{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-5 col-lg-4">
+        <div class="card shadow-sm">
+            <div class="card-body p-4">
+                <h1 class="h4 mb-3">Вход</h1>
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                {% for category, message in messages %}
+                <div class="alert alert-{{ category }} py-2">{{ message }}</div>
+                {% endfor %}
+                {% endif %}
+                {% endwith %}
+                <form method="post" action="{{ url_for('auth.login') }}">
+                    <div class="mb-3">
+                        <label class="form-label" for="username">Логин</label>
+                        <input class="form-control" id="username" name="username" required autofocus>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="password">Пароль</label>
+                        <input class="form-control" id="password" name="password" type="password" required>
+                    </div>
+                    <div class="mb-3 form-check">
+                        <input class="form-check-input" id="remember" name="remember" type="checkbox">
+                        <label class="form-check-label" for="remember">Запомнить меня</label>
+                    </div>
+                    <button class="btn btn-primary w-100" type="submit">Войти</button>
+                </form>
+                <p class="text-muted small mt-3 mb-0">
+                    Нет аккаунта? <a href="{{ url_for('auth.register') }}">Регистрация</a>
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

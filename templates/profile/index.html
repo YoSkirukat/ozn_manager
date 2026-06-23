@@ -1,0 +1,207 @@
+{% extends "base.html" %}
+{% block title %}Профиль — Ozon Manager{% endblock %}
+{% block extra_head %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+{% endblock %}
+{% block content %}
+<h1 class="h3 mb-4">Профиль</h1>
+{% with messages = get_flashed_messages(with_categories=true) %}
+{% if messages %}
+{% for category, message in messages %}
+<div class="alert alert-{{ category }} py-2">{{ message }}</div>
+{% endfor %}
+{% endif %}
+{% endwith %}
+<div class="row g-4">
+    <div class="col-lg-6">
+        <div class="card shadow-sm mb-4">
+            <div class="card-body">
+                <h2 class="h5">Аккаунт</h2>
+                <dl class="row mb-0 small">
+                    <dt class="col-4 text-muted">Имя</dt>
+                    <dd class="col-8">{{ current_user.display_name or '—' }}</dd>
+                    <dt class="col-4 text-muted">Логин</dt>
+                    <dd class="col-8">{{ current_user.username }}</dd>
+                    <dt class="col-4 text-muted">Email</dt>
+                    <dd class="col-8">{{ current_user.email }}</dd>
+                    <dt class="col-4 text-muted">Роль</dt>
+                    <dd class="col-8">
+                        {% if current_user.is_admin %}Администратор{% else %}Пользователь{% endif %}
+                    </dd>
+                </dl>
+            </div>
+        </div>
+
+        {% if current_user.has_ozon_credentials() %}
+        <div class="ozon-status-card mb-4">
+            <div class="d-flex align-items-start gap-3">
+                <span class="ozon-status-dot mt-1 {% if current_user.ozon_is_active() %}active{% else %}inactive{% endif %}"
+                      title="{% if current_user.ozon_is_active() %}Ключ активен{% else %}Ключ неактивен{% endif %}"></span>
+                <div class="flex-grow-1 min-w-0">
+                    <div class="fw-semibold mb-1 text-truncate">
+                        {{ current_user.ozon_company_name or 'Организация не определена' }}
+                    </div>
+                    <div class="small text-muted mb-2">
+                        Статус ключа:
+                        {% if current_user.ozon_is_active() %}
+                        <span class="text-success">активен</span>
+                        {% elif current_user.ozon_key_active is none %}
+                        <span>не проверен</span>
+                        {% else %}
+                        <span class="text-secondary">неактивен</span>
+                        {% endif %}
+                    </div>
+                    <div class="small text-muted">
+                        Дата подключения:
+                        {% if current_user.ozon_connected_at %}
+                        {{ current_user.ozon_connected_at|dt }}
+                        {% else %}
+                        —
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="d-flex gap-1 flex-shrink-0 ozon-status-actions">
+                    <form method="post" action="{{ url_for('profile.check_ozon') }}">
+                        <button type="submit" class="btn btn-sm btn-light border" title="Проверить активность"
+                                aria-label="Проверить активность">
+                            <i class="bi bi-arrow-clockwise"></i>
+                        </button>
+                    </form>
+                    <form method="post" action="{{ url_for('profile.delete_ozon') }}"
+                          onsubmit="return confirm('Удалить ключи Ozon API?');">
+                        <button type="submit" class="btn btn-sm btn-light border text-danger" title="Удалить ключ"
+                                aria-label="Удалить ключ">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="card shadow-sm mb-4">
+            <div class="card-header">Подключение к Ozon Seller API</div>
+            <div class="card-body">
+                <p class="text-muted small">
+                    Ключи создаются в личном кабинете продавца:
+                    <a href="https://seller.ozon.ru/app/settings/api-keys" target="_blank" rel="noopener">
+                        Настройки → API-ключи
+                    </a>.
+                    В запросах к API передаются заголовки <code>Client-Id</code> и <code>Api-Key</code>.
+                </p>
+                <form method="post" action="{{ url_for('profile.index') }}">
+                    <div class="mb-3">
+                        <label class="form-label" for="ozon_client_id">Client-Id</label>
+                        <input class="form-control font-monospace" id="ozon_client_id" name="ozon_client_id"
+                               value="{{ current_user.ozon_client_id or '' }}"
+                               placeholder="Идентификатор клиента" autocomplete="off">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="ozon_api_key">Api-Key</label>
+                        <input class="form-control font-monospace" id="ozon_api_key" name="ozon_api_key"
+                               type="password" placeholder="{% if current_user.ozon_api_key %}Оставьте пустым, чтобы не менять{% else %}API-ключ{% endif %}"
+                               autocomplete="new-password">
+                        <div class="form-text">Ключ хранится в базе и не отображается повторно.</div>
+                    </div>
+                    <button class="btn btn-primary" type="submit">Сохранить</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-6">
+        <div class="card shadow-sm mb-4">
+            <div class="card-header">Внешние данные</div>
+            <div class="card-body">
+                <p class="text-muted small mb-3">
+                    Укажите ссылку на XLS/XLSX с колонками <strong>Баркод</strong> и <strong>Цена закуп</strong>.
+                    Поддерживаются прямые ссылки и таблицы Google Sheets.
+                </p>
+                <form method="post" action="{{ url_for('profile.save_external') }}">
+                    <div class="mb-3">
+                        <label class="form-label" for="purchase_prices_url">Файл с закупочными ценами</label>
+                        <input class="form-control" id="purchase_prices_url" name="purchase_prices_url" type="url"
+                               value="{{ current_user.purchase_prices_url or '' }}"
+                               placeholder="https://...">
+                    </div>
+                    <button class="btn btn-primary" type="submit">Сохранить</button>
+                </form>
+            </div>
+        </div>
+
+        <div class="card shadow-sm mb-4" id="scheduled-tasks-card">
+            <div class="card-header">Регламентные задания</div>
+            <div class="card-body">
+                <p class="text-muted small mb-3">
+                    Автоматическая загрузка данных из Ozon по расписанию. Планировщик встроен в приложение
+                    (без cron). Заказы — за 30 дней, поставки — за 21 день, остатки — актуальный срез по складам FBO,
+                    товары — полная синхронизация каталога и закупочных цен.
+                </p>
+                <div id="scheduled-tasks-scheduler-warn" class="alert alert-warning d-none small py-2 mb-2" role="alert"></div>
+                <div id="scheduled-tasks-list">
+                    <div class="text-muted small py-2">Загрузка…</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card shadow-sm mb-4" id="notification-settings-card">
+            <div class="card-header">Уведомления</div>
+            <div class="card-body">
+                <p class="text-muted small mb-3">
+                    События проверяются автоматически в фоне раз в минуту. Новые уведомления появляются
+                    в колокольчике в шапке без перезагрузки страницы. Для всплывающих уведомлений
+                    операционной системы разрешите их в браузере.
+                </p>
+                <div id="notification-settings-list">
+                    <div class="text-muted small py-2">Загрузка…</div>
+                </div>
+                <div class="notification-browser-block border-top mt-3 pt-3" id="notification-browser-block">
+                    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
+                        <div>
+                            <div class="fw-semibold">Уведомления браузера</div>
+                            <div class="small text-muted" id="notification-browser-status">Проверка…</div>
+                        </div>
+                        <button type="button" class="btn btn-outline-primary btn-sm"
+                                id="btn-notification-browser-enable" disabled>
+                            Разрешить
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="scheduled-tasks-log-modal" tabindex="-1" aria-labelledby="scheduledTasksLogLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="scheduledTasksLogLabel">Журнал регламентных заданий</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+            </div>
+            <div class="modal-body p-0">
+                <p class="small text-muted px-3 pt-3 mb-0" id="scheduled-tasks-log-hint">Последние 50 записей</p>
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0 scheduled-tasks-log-table">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Запуск</th>
+                                <th>Статус</th>
+                                <th>Сообщение</th>
+                            </tr>
+                        </thead>
+                        <tbody id="scheduled-tasks-log-body">
+                            <tr><td colspan="3" class="text-muted text-center py-4">Загрузка…</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='js/scheduled_tasks.js') }}" defer></script>
+<script src="{{ url_for('static', filename='js/notification_settings.js') }}" defer></script>
+{% endblock %}

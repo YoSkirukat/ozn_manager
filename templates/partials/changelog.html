@@ -1,0 +1,32 @@
+
+<div data-page-title="{{ page_title }}">
+    <div class="release-notes-header mb-4">
+        <h1 class="h3 mb-2">Обновления и изменения</h1>
+        <p class="text-muted mb-3">Текущая версия: <strong>{{ current_version }}</strong></p>
+        {% if current_user.is_authenticated and current_user.is_admin %}
+        <a href="{{ url_for('admin.releases') }}" class="btn btn-sm btn-outline-primary">Редактировать</a>
+        {% endif %}
+    </div>
+
+    {% if releases %}
+    {% for r in releases %}
+    <section class="release-version mb-4">
+        <h2 class="h5 fw-semibold mb-2">
+            Версия {{ r.version }} от {{ r.released_at.strftime('%d.%m.%Y') }}
+        </h2>
+        <ul class="release-items mb-0">
+            {% for item in r.items_list %}
+            <li>{{ item }}</li>
+            {% endfor %}
+        </ul>
+    </section>
+    {% endfor %}
+    {% else %}
+    <div class="alert alert-light border text-muted">
+        Пока нет опубликованных обновлений.
+        {% if current_user.is_authenticated and current_user.is_admin %}
+        <a href="{{ url_for('admin.releases') }}">Добавить первую версию</a>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>

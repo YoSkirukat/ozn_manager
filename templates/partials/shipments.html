@@ -1,0 +1,110 @@
+<div data-page-title="{{ page_title }}">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4">
+        <h1 class="h3 mb-0">Поставки</h1>
+    </div>
+
+    {% if not has_ozon %}
+    <div class="alert alert-warning py-2">
+        Для загрузки поставок укажите <strong>Client-Id</strong> и <strong>Api-Key</strong> в
+        <a href="{{ url_for('profile.index') }}">профиле</a>.
+    </div>
+    {% endif %}
+
+    <div class="card shadow-sm mb-4">
+        <div class="card-body">
+            <div class="row g-3 align-items-end">
+                <div class="orders-period-wrap">
+                    <label class="form-label" for="shipments-date-range">Период</label>
+                    <input type="text" class="form-control orders-date-range-input" id="shipments-date-range"
+                           placeholder="Выберите даты" autocomplete="off"
+                           data-date-from="{{ date_from.isoformat() if date_from else '' }}"
+                           data-date-to="{{ date_to.isoformat() if date_to else '' }}"
+                           {% if not has_ozon %}disabled{% endif %}>
+                </div>
+                <div class="col-md-auto">
+                    <button type="button" class="btn btn-primary" id="btn-load-shipments"
+                            data-has-ozon="{{ '1' if has_ozon else '0' }}"
+                            {% if not has_ozon %}disabled title="Подключите Ozon API в профиле"{% endif %}>
+                        <span class="spinner-border spinner-border-sm d-none me-1" id="shipments-load-spinner" role="status"></span>
+                        Загрузить поставки
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="shipments-load-message"></div>
+
+    {% if shipments %}
+    <div class="ozon-orders-card bg-white rounded shadow-sm">
+        <div class="ozon-orders-head row g-0 d-none d-lg-flex">
+            <div class="col-lg-2 text-center">Дата поставки</div>
+            <div class="col-lg-2 text-center">Номер заявки</div>
+            <div class="col-lg-2 text-center">Статус</div>
+            <div class="col-lg-3 text-center">Склад назначения</div>
+            <div class="col-lg-1 text-center">Товаров</div>
+            <div class="col-lg-1 text-center">Единиц</div>
+            <div class="col-lg-1 text-center">Поставок</div>
+        </div>
+        {% for s in shipments %}
+        <div class="ozon-order-row" data-shipment-row-id="{{ s.id }}">
+            <div class="row g-3 align-items-center">
+                <div class="col-lg-2">
+                    <div class="ozon-posting-meta text-dark">
+                        {{ s.supply_date|dt }}
+                    </div>
+                </div>
+                <div class="col-lg-2">
+                    <button type="button" class="ozon-posting-link btn btn-link p-0 text-start font-monospace"
+                            data-shipment-id="{{ s.id }}">{{ s.order_number }}</button>
+                </div>
+                <div class="col-lg-2">
+                    <span class="ozon-status-badge ozon-status-{{ s.status_badge_class() }}">
+                        {{ s.status_display() }}
+                    </span>
+                </div>
+                <div class="col-lg-3">
+                    <div class="ozon-product-title">{{ s.warehouse_name or '—' }}</div>
+                </div>
+                <div class="col-lg-1 text-lg-center">
+                    <div class="ozon-order-price shipment-sku-count" data-shipment-id="{{ s.id }}">{{ s.sku_count if s.sku_count is not none else '—' }}</div>
+                </div>
+                <div class="col-lg-1 text-lg-center">
+                    <div class="ozon-order-price shipment-units-total" data-shipment-id="{{ s.id }}">{{ s.units_total if s.units_total is not none else '—' }}</div>
+                </div>
+                <div class="col-lg-1 text-lg-center">
+                    <div class="ozon-order-price">{{ s.supplies_count }}</div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% elif date_from and date_to %}
+    <div class="alert alert-light border text-center text-muted mb-0" id="shipments-empty">
+        За выбранный период поставок нет. Нажмите «Загрузить поставки», чтобы получить данные из Ozon.
+    </div>
+    {% else %}
+    <div class="alert alert-light border text-center text-muted mb-0" id="shipments-empty">
+        Выберите период в календаре и нажмите «Загрузить поставки».
+    </div>
+    {% endif %}
+
+    <div class="modal fade" id="supply-detail-modal" tabindex="-1" aria-labelledby="supplyDetailModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div>
+                        <h5 class="modal-title mb-1" id="supplyDetailModalLabel">
+                            <span id="supply-modal-number">—</span>
+                        </h5>
+                        <div class="small text-muted" id="supply-modal-meta"></div>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+                </div>
+                <div class="modal-body" id="supply-modal-body">
+                    <div class="text-center text-muted py-4">Загрузка...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

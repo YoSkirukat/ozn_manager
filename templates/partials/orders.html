@@ -1,0 +1,267 @@
+<div data-page-title="{{ page_title }}">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4">
+        <h1 class="h3 mb-0">Заказы</h1>
+    </div>
+
+    {% if not has_ozon %}
+    <div class="alert alert-warning py-2">
+        Для загрузки заказов укажите <strong>Client-Id</strong> и <strong>Api-Key</strong> в
+        <a href="{{ url_for('profile.index') }}">профиле</a>.
+    </div>
+    {% endif %}
+
+    <div class="card shadow-sm mb-4" id="orders-toolbar"
+         data-date-from="{{ date_from.isoformat() if date_from else '' }}"
+         data-date-to="{{ date_to.isoformat() if date_to else '' }}"
+         data-status="{{ selected_statuses|join(',') }}"
+         data-scheme="{{ selected_schemes|join(',') }}">
+        <div class="card-body">
+            <div class="row g-3 align-items-end orders-toolbar-row">
+                <div class="orders-period-wrap">
+                    <label class="form-label" for="orders-date-range">Период</label>
+                    <input type="text" class="form-control orders-date-range-input" id="orders-date-range"
+                           placeholder="Выберите даты" autocomplete="off"
+                           data-date-from="{{ date_from.isoformat() if date_from else '' }}"
+                           data-date-to="{{ date_to.isoformat() if date_to else '' }}"
+                           {% if not has_ozon %}disabled{% endif %}>
+                </div>
+                <div class="orders-show-wrap">
+                    <label class="form-label orders-toolbar-action-label" aria-hidden="true">&nbsp;</label>
+                    <button type="button" class="btn btn-outline-primary" id="btn-load-orders"
+                            title="Показать заказы из базы за выбранный период (без запроса к Ozon)">
+                        Показать заказы
+                    </button>
+                </div>
+                <div class="orders-filter-wrap">
+                    <label class="form-label">Статус</label>
+                    <div class="dropdown orders-filter-dropdown">
+                        <button type="button"
+                                class="btn btn-outline-secondary btn-sm orders-filter-btn dropdown-toggle{% if selected_statuses %} orders-filter-btn--active{% endif %}"
+                                id="orders-filter-status-btn" data-bs-toggle="dropdown"
+                                data-bs-auto-close="outside" aria-expanded="false"
+                                {% if not has_ozon %}disabled{% endif %}>
+                            <span class="orders-filter-label" id="orders-filter-status-label">Все статусы</span>
+                            <span class="orders-filter-caret" aria-hidden="true"></span>
+                            <span class="orders-filter-clear{% if not selected_statuses %} d-none{% endif %}"
+                                  id="orders-filter-status-clear" data-filter-kind="status"
+                                  role="button" tabindex="-1"
+                                  aria-label="Сбросить фильтр по статусу">&times;</span>
+                        </button>
+                        <ul class="dropdown-menu orders-filter-menu" id="orders-filter-status-menu" aria-labelledby="orders-filter-status-btn">
+                            {% for code, label in status_options %}
+                            <li>
+                                <label class="dropdown-item orders-filter-item">
+                                    <input type="checkbox" class="form-check-input me-2 orders-filter-status"
+                                           value="{{ code }}"{% if code in selected_statuses %} checked{% endif %}>
+                                    {{ label }}
+                                </label>
+                            </li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                </div>
+                <div class="orders-filter-wrap">
+                    <label class="form-label">Схема</label>
+                    <div class="dropdown orders-filter-dropdown">
+                        <button type="button"
+                                class="btn btn-outline-secondary btn-sm orders-filter-btn dropdown-toggle{% if selected_schemes %} orders-filter-btn--active{% endif %}"
+                                id="orders-filter-scheme-btn" data-bs-toggle="dropdown"
+                                data-bs-auto-close="outside" aria-expanded="false"
+                                {% if not has_ozon %}disabled{% endif %}>
+                            <span class="orders-filter-label" id="orders-filter-scheme-label">Все схемы</span>
+                            <span class="orders-filter-caret" aria-hidden="true"></span>
+                            <span class="orders-filter-clear{% if not selected_schemes %} d-none{% endif %}"
+                                  id="orders-filter-scheme-clear" data-filter-kind="scheme"
+                                  role="button" tabindex="-1"
+                                  aria-label="Сбросить фильтр по схеме">&times;</span>
+                        </button>
+                        <ul class="dropdown-menu orders-filter-menu" id="orders-filter-scheme-menu" aria-labelledby="orders-filter-scheme-btn">
+                            {% for code, label in scheme_options %}
+                            <li>
+                                <label class="dropdown-item orders-filter-item">
+                                    <input type="checkbox" class="form-check-input me-2 orders-filter-scheme"
+                                           value="{{ code }}"{% if code in selected_schemes %} checked{% endif %}>
+                                    {{ label }}
+                                </label>
+                            </li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                </div>
+                <div class="orders-actions-wrap ms-md-auto">
+                    <label class="form-label orders-toolbar-action-label" aria-hidden="true">&nbsp;</label>
+                    <div class="orders-actions-group">
+                        <button type="button" class="btn btn-primary" id="btn-load-orders-financials"
+                                data-has-ozon="{{ '1' if has_ozon else '0' }}"
+                                {% if not has_ozon %}disabled title="Подключите Ozon API в профиле"{% else %}title="Загрузить из Ozon, пересчитать начисления и маржу, сохранить в базу"{% endif %}>
+                            <span class="spinner-border spinner-border-sm d-none me-1" id="orders-load-financials-spinner" role="status"></span>
+                            Обновить заказы и начисления
+                        </button>
+                        <div class="dropdown" id="orders-export-dropdown">
+                            <button type="button"
+                                    class="btn orders-export-btn dropdown-toggle"
+                                    data-bs-toggle="dropdown" data-bs-auto-close="true"
+                                    aria-expanded="false" aria-label="Экспорт"
+                                    title="Экспорт">
+                                <svg class="orders-export-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                                    <path fill="#217346" d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
+                                    <path fill="#33a867" d="M14 2v6h6L14 2z"/>
+                                    <path fill="#fff" d="M7.2 7.5 10.6 12 7.2 16.5h2.1l2.1-3.3 2.1 3.3h2.1L12.4 12l3.9-4.5h-2.1l-2.1 3.2-2.1-3.2H7.2z"/>
+                                </svg>
+                            </button>
+                            <ul class="dropdown-menu dropdown-menu-end">
+                                <li>
+                                    <button type="button" class="dropdown-item" data-export-type="excel">
+                                        Выгрузить в Excel
+                                    </button>
+                                </li>
+                                <li>
+                                    <button type="button" class="dropdown-item" data-export-type="1c">
+                                        Выгрузить для 1С
+                                    </button>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="orders-load-message"></div>
+
+    {% if orders %}
+    <div class="ozon-orders-card bg-white rounded shadow-sm">
+        <div class="ozon-orders-head row g-0 d-none d-lg-flex">
+            <div class="col-lg-2 text-center">Номер отправления</div>
+            <div class="col-lg-2 text-center">Статус</div>
+            <div class="col-lg-1 text-center">Фото</div>
+            <div class="col-lg-4 text-center">Количество, артикул / Название товара</div>
+            <div class="col-lg-1 text-center">Маржа</div>
+            <div class="col-lg-2 text-center">Стоимость</div>
+        </div>
+        {% for o in orders %}
+        <div class="ozon-order-row">
+            <div class="row g-3 align-items-center">
+                <div class="col-lg-2">
+                    <button type="button" class="ozon-posting-link btn btn-link p-0 text-start"
+                            data-posting-number="{{ o.ozon_order_id }}">{{ o.ozon_order_id }}</button>
+                    <div class="ozon-posting-meta">
+                        {{ o.order_date|dt }}
+                        &middot;
+                        <span class="ozon-scheme ozon-scheme-{{ o.scheme|lower }}">{{ o.scheme_display() }}</span>
+                        {% if o.is_international() %}
+                        &middot;
+                        <span class="ozon-order-country">{{ o.delivery_country() }}</span>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="col-lg-2 text-lg-center">
+                    <span class="ozon-status-badge ozon-status-{{ o.status_badge_class() }}">
+                        {{ o.status_display() }}
+                    </span>
+                    {% if o.has_post_delivery_return() %}
+                    <span class="product-return-mark product-return-mark--inline"
+                          title="Возврат после доставки"
+                          aria-label="Возврат после доставки">В</span>
+                    {% endif %}
+                    {% if o.is_international() %}
+                    <div class="ozon-order-international mt-1">Международный</div>
+                    {% endif %}
+                </div>
+                <div class="col-lg-1">
+                    {% if o.product_image_url() %}
+                    <img src="{{ o.product_image_url() }}" alt="" class="ozon-order-thumb" loading="lazy"
+                         referrerpolicy="no-referrer">
+                    {% else %}
+                    <div class="ozon-order-thumb ozon-order-thumb-empty" aria-hidden="true"></div>
+                    {% endif %}
+                </div>
+                <div class="col-lg-4">
+                    {% set cell = o.product_cell() %}
+                    {% set promos = o.promotion_purchase_labels() %}
+                    <div class="product-cell-title" title="{{ cell.name }}">
+                        {% if promos %}
+                        <span class="product-promo-mark product-promo-mark--inline"
+                              title="{{ promos|join(' · ') }}"
+                              aria-label="Куплен по акции">А</span>
+                        {% endif %}
+                        {{ cell.title }}
+                    </div>
+                    <div class="product-cell-meta font-monospace">{{ cell.offer_id }}</div>
+                    <div class="product-cell-meta font-monospace">{{ cell.barcode }}</div>
+                </div>
+                <div class="col-lg-1 text-lg-end">
+                    {% if o.has_post_delivery_return() %}
+                    <div class="ozon-order-margin text-muted">—</div>
+                    {% else %}
+                    {% set margin = o.order_margin(current_user) %}
+                    {% if margin is not none %}
+                    <div class="ozon-order-margin{% if margin < 0 %} order-accrual-negative{% endif %}">
+                        {%- if margin < 0 %}−{% endif -%}{{ margin|abs|money }} ₽
+                    </div>
+                    {% else %}
+                    <div class="ozon-order-margin text-muted">—</div>
+                    {% endif %}
+                    {% endif %}
+                </div>
+                <div class="col-lg-2 text-lg-end">
+                    <div class="ozon-order-price">{{ '%.0f'|format(o.total) }} ₽</div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% elif date_from and date_to %}
+    <div class="alert alert-light border text-center text-muted mb-0" id="orders-empty">
+        {% if filters_active %}
+        Нет заказов по выбранным фильтрам. Измените фильтры или нажмите «Обновить заказы и начисления».
+        {% else %}
+        За выбранный период заказов нет. Нажмите «Обновить заказы и начисления», чтобы загрузить из Ozon.
+        {% endif %}
+    </div>
+    {% else %}
+    <div class="alert alert-light border text-center text-muted mb-0" id="orders-empty">
+        Выберите период: «Показать заказы» — из базы, «Обновить заказы и начисления» — загрузка из Ozon.
+    </div>
+    {% endif %}
+
+    <div class="modal fade" id="order-detail-modal" tabindex="-1" aria-labelledby="orderDetailModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div>
+                        <h5 class="modal-title mb-1" id="orderDetailModalLabel">
+                            <span id="order-modal-number">—</span>
+                        </h5>
+                        <div class="small text-muted" id="order-modal-meta"></div>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+                </div>
+                <div class="modal-body" id="order-modal-body">
+                    <div class="text-center text-muted py-4" id="order-modal-loading">Загрузка...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="orders-financials-confirm-modal" tabindex="-1"
+         aria-labelledby="ordersFinancialsConfirmLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="ordersFinancialsConfirmLabel">Подтверждение обновления</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+                </div>
+                <div class="modal-body">
+                    Вы точно хотите обновить всю информацию по заказам за выбранный период?
+                    Это займет продолжительное время.
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Отмена</button>
+                    <button type="button" class="btn btn-primary" id="orders-financials-confirm-ok">ОК</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

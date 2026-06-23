@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Ozon Manager{% endblock %}</title>
+    <link rel="icon" href="{{ url_for('favicon') }}" type="image/x-icon">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"
+          integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+    <link href="{{ url_for('static', filename='css/main.css') }}" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    {% block extra_head %}{% endblock %}
+</head>
+<body class="d-flex flex-column min-vh-100">
+    <header class="navbar navbar-expand-lg navbar-dark app-navbar border-bottom">
+        <div class="container">
+            <a class="navbar-brand fw-semibold"
+               href="{% if current_user.is_authenticated %}/{% else %}{{ url_for('auth.login') }}{% endif %}"
+               {% if current_user.is_authenticated %}data-nav="/"{% endif %}>Ozon Manager</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNav"
+                    aria-controls="mainNav" aria-expanded="false" aria-label="Меню">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="mainNav">
+                {% if current_user.is_authenticated %}
+                <ul class="navbar-nav me-auto mb-2 mb-lg-0" id="app-nav">
+                    <li class="nav-item"><a class="nav-link" href="/" data-nav="/">Главная</a></li>
+                    <li class="nav-item"><a class="nav-link" href="/products" data-nav="/products">Товары</a></li>
+                    <li class="nav-item"><a class="nav-link" href="/orders" data-nav="/orders">Заказы</a></li>
+                    <li class="nav-item"><a class="nav-link" href="/shipments" data-nav="/shipments">Поставки</a></li>
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" role="button"
+                           data-bs-toggle="dropdown" data-bs-display="static" aria-expanded="false"
+                           id="reports-nav-dropdown" data-nav-prefix="/reports">
+                            Отчёты
+                        </a>
+                        <ul class="dropdown-menu" aria-labelledby="reports-nav-dropdown">
+                            <li>
+                                <a class="dropdown-item" href="/reports/stock" data-nav="/reports/stock">Остатки товаров</a>
+                            </li>
+                            <li>
+                                <a class="dropdown-item" href="/reports/returns" data-nav="/reports/returns">Возвраты</a>
+                            </li>
+                        </ul>
+                    </li>
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" role="button"
+                           data-bs-toggle="dropdown" data-bs-display="static" aria-expanded="false"
+                           id="analytics-nav-dropdown" data-nav-prefix="/analytics">
+                            Аналитика
+                        </a>
+                        <ul class="dropdown-menu" aria-labelledby="analytics-nav-dropdown">
+                            <li>
+                                <a class="dropdown-item" href="/analytics/supply-planning" data-nav="/analytics/supply-planning">Планирование поставки</a>
+                            </li>
+                            <li>
+                                <a class="dropdown-item" href="/analytics/promotions" data-nav="/analytics/promotions">Товары в акциях</a>
+                            </li>
+                            <li>
+                                <a class="dropdown-item" href="/analytics/warehouse-slots" data-nav="/analytics/warehouse-slots">Склады и слоты</a>
+                            </li>
+                        </ul>
+                    </li>
+                </ul>
+                {% endif %}
+                <ul class="navbar-nav ms-auto" id="user-nav">
+                    {% if current_user.is_authenticated %}
+                    <li class="nav-item dropdown" id="notifications-nav-item">
+                        <a class="nav-link position-relative text-light notifications-bell" href="#" role="button"
+                           data-bs-toggle="dropdown" data-bs-display="static" aria-expanded="false"
+                           id="notifications-nav-dropdown" aria-label="Уведомления">
+                            <i class="bi bi-bell" aria-hidden="true"></i>
+                            <span class="notifications-badge d-none" id="notifications-unread-badge">0</span>
+                        </a>
+                        <div class="dropdown-menu notifications-dropdown p-0"
+                             aria-labelledby="notifications-nav-dropdown">
+                            <div class="notifications-dropdown-header d-flex justify-content-between align-items-center px-3 py-2 border-bottom">
+                                <span class="fw-semibold">Уведомления</span>
+                                <div class="notifications-dropdown-header-actions">
+                                    <button type="button" class="notifications-header-btn notifications-read-all-btn"
+                                            title="Прочитать все" aria-label="Прочитать все">
+                                        <i class="bi bi-check2-all" aria-hidden="true"></i>
+                                    </button>
+                                    <button type="button" class="notifications-header-btn notifications-clear-all-btn"
+                                            title="Очистить все уведомления" aria-label="Очистить все уведомления">
+                                        <i class="bi bi-trash" aria-hidden="true"></i>
+                                    </button>
+                                    <a href="{{ url_for('profile.index') }}#notification-settings-card"
+                                       class="notifications-header-btn notifications-settings-link"
+                                       title="Настройки уведомлений" aria-label="Настройки уведомлений">
+                                        <i class="bi bi-gear" aria-hidden="true"></i>
+                                    </a>
+                                </div>
+                            </div>
+                            <div class="notifications-dropdown-list" id="notifications-dropdown-list">
+                                <div class="text-muted small text-center py-3">Загрузка…</div>
+                            </div>
+                        </div>
+                    </li>
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle text-light" href="#" role="button"
+                           data-bs-toggle="dropdown" data-bs-display="static" aria-expanded="false"
+                           id="user-nav-dropdown" data-nav-prefixes="/profile,/admin">
+                            {{ current_user.label() }}
+                        </a>
+                        <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="user-nav-dropdown">
+                            <li>
+                                <a class="dropdown-item" href="{{ url_for('profile.index') }}">Профиль</a>
+                            </li>
+                            {% if current_user.is_admin %}
+                            <li>
+                                <a class="dropdown-item" href="{{ url_for('admin.users') }}">Пользователи</a>
+                            </li>
+                            {% endif %}
+                        </ul>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link nav-logout-link" href="{{ url_for('auth.logout') }}"
+                           title="Выход" aria-label="Выход">
+                            <i class="bi bi-box-arrow-right" aria-hidden="true"></i>
+                        </a>
+                    </li>
+                    {% else %}
+                    <li class="nav-item"><a class="nav-link" href="{{ url_for('auth.login') }}">Вход</a></li>
+                    <li class="nav-item"><a class="nav-link" href="{{ url_for('auth.register') }}">Регистрация</a></li>
+                    {% endif %}
+                </ul>
+            </div>
+        </div>
+    </header>
+
+    <div class="toast-container position-fixed top-0 end-0 p-3" id="toast-container"></div>
+
+    <main class="container flex-grow-1 py-4" id="main-content">
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer class="bg-light border-top py-3 mt-auto">
+        <div class="container text-center text-muted small">
+            Ozon Manager &copy; 2026
+            &middot;
+            {% if current_user.is_authenticated %}
+            <a href="{{ url_for('main.changelog') }}" data-nav="/changelog" title="Обновления и изменения">Ver. {{ app_version }}</a>
+            {% else %}
+            <span>Ver. {{ app_version }}</span>
+            {% endif %}
+        </div>
+    </footer>
+
+    <div id="page-loader" class="page-loader d-none" aria-hidden="true">
+        <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Загрузка...</span>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
+            integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz"
+            crossorigin="anonymous"></script>
+    <script>window.APP_TIMEZONE = {{ app_timezone|tojson }};</script>
+    <script src="{{ url_for('static', filename='js/datetime.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/app.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/notifications.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/dashboard.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/products.js') }}" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/ru.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    <script src="{{ url_for('static', filename='js/orders.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/shipments.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/stocks.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/supply_planning.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/promotions.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/warehouse_slots.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/returns.js') }}" defer></script>
+    {% block extra_scripts %}{% endblock %}
+</body>
+</html>

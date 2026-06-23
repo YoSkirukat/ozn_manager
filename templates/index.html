@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block title %}Главная — Ozon Manager{% endblock %}
+{% block content %}
+{% include "partials/dashboard.html" %}
+{% endblock %}
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='js/dashboard.js') }}" defer></script>
+{% endblock %}

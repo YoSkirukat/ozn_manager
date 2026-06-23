@@ -1,0 +1,107 @@
+<div data-page-title="{{ page_title }}" id="warehouse-slots-page">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4">
+        <div>
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb mb-1 small">
+                    <li class="breadcrumb-item text-muted">Аналитика</li>
+                    <li class="breadcrumb-item active" aria-current="page">Склады и слоты</li>
+                </ol>
+            </nav>
+            <h1 class="h3 mb-0">Склады и слоты</h1>
+        </div>
+    </div>
+
+    {% if not has_ozon %}
+    <div class="alert alert-warning py-2">
+        Для загрузки данных укажите <strong>Client-Id</strong> и <strong>Api-Key</strong> в
+        <a href="{{ url_for('profile.index') }}">профиле</a>.
+    </div>
+    {% endif %}
+
+    {% if load_error %}
+    <div class="alert alert-danger py-2">{{ load_error }}</div>
+    {% endif %}
+
+    <div class="card shadow-sm mb-4">
+        <div class="card-body">
+            <div class="row g-3 align-items-end">
+                <div class="col-md-6">
+                    <label class="form-label" for="warehouse-slots-cluster">Кластер</label>
+                    <select class="form-select" id="warehouse-slots-cluster"
+                            {% if not has_ozon or not clusters %}disabled{% endif %}>
+                        <option value="">Все кластеры</option>
+                        {% for cluster in clusters %}
+                        <option value="{{ cluster.macrolocal_cluster_id }}"
+                                data-cluster-id="{{ cluster.cluster_id }}">
+                            {{ cluster.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-auto">
+                    <button type="button" class="btn btn-primary" id="btn-warehouse-slots-refresh"
+                            {% if not has_ozon %}disabled title="Подключите Ozon API в профиле"{% endif %}>
+                        <span class="spinner-border spinner-border-sm d-none me-1" id="warehouse-slots-spinner" role="status"></span>
+                        Обновить
+                    </button>
+                </div>
+            </div>
+            <p class="text-muted small mb-0 mt-3">
+                Данные запрашиваются из Ozon в реальном времени. Для проверки доступности используется один товар из вашего каталога.
+                Без выбора кластера загружаются склады по всем кластерам — это может занять несколько минут.
+            </p>
+        </div>
+    </div>
+
+    <div class="card shadow-sm mb-4" id="warehouse-slots-monitor-card">
+        <div class="card-header">Мониторинг доступности</div>
+        <div class="card-body">
+            <p class="text-muted small mb-3">
+                Выберите склады в таблице ниже. При проверке, если склад доступен к поставке,
+                придёт уведомление. Повторное уведомление — только после периода недоступности.
+                Чтобы отменить отслеживание — снимите отметку или удалите склад из списка.
+            </p>
+            <div id="warehouse-slots-watch-list" class="warehouse-slots-watch-list">
+                <div class="text-muted small">Загрузка…</div>
+            </div>
+        </div>
+    </div>
+
+    <div id="warehouse-slots-message"></div>
+
+    <div class="card shadow-sm mb-4 d-none" id="warehouse-slots-summary-card">
+        <div class="card-body py-3">
+            <div class="row g-3 text-center text-md-start">
+                <div class="col-md-4">
+                    <div class="text-muted small">Кластер</div>
+                    <div class="fw-semibold" id="warehouse-slots-summary-cluster">—</div>
+                </div>
+                <div class="col-md-4">
+                    <div class="text-muted small">Складов в списке</div>
+                    <div class="fw-semibold" id="warehouse-slots-summary-total">—</div>
+                </div>
+                <div class="col-md-4">
+                    <div class="text-muted small">Доступно для поставки</div>
+                    <div class="fw-semibold text-success" id="warehouse-slots-summary-available">—</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="products-table-wrap warehouse-slots-table-wrap d-none" id="warehouse-slots-table-wrap">
+        <table class="table table-hover align-middle bg-white rounded shadow-sm mb-0 products-table warehouse-slots-table">
+            <thead class="table-light">
+                <tr>
+                    <th class="warehouse-slots-col-expand"></th>
+                    <th class="warehouse-slots-col-cluster d-none" id="warehouse-slots-col-cluster">Кластер</th>
+                    <th class="warehouse-slots-col-name">Склад</th>
+                    <th class="warehouse-slots-col-address">Адрес</th>
+                    <th class="text-center warehouse-slots-col-availability">Доступность</th>
+                    <th class="text-center text-nowrap warehouse-slots-col-rank">Рейтинг</th>
+                    <th class="text-center warehouse-slots-col-watch">Мониторинг</th>
+                </tr>
+            </thead>
+            <tbody id="warehouse-slots-table-body"></tbody>
+        </table>
+    </div>
+</div>

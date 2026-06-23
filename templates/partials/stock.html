@@ -1,0 +1,191 @@
+<div data-page-title="{{ page_title }}">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4">
+        <div>
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb mb-1 small">
+                    <li class="breadcrumb-item text-muted">Отчёты</li>
+                    <li class="breadcrumb-item active" aria-current="page">Остатки товаров</li>
+                </ol>
+            </nav>
+            <h1 class="h3 mb-0">Остатки товаров</h1>
+        </div>
+    </div>
+
+    {% if not has_ozon %}
+    <div class="alert alert-warning py-2">
+        Для загрузки остатков укажите <strong>Client-Id</strong> и <strong>Api-Key</strong> в
+        <a href="{{ url_for('profile.index') }}">профиле</a>.
+    </div>
+    {% endif %}
+
+    <div class="card shadow-sm mb-4">
+        <div class="card-body d-flex flex-wrap align-items-start justify-content-between gap-3">
+            <div class="flex-grow-1 min-w-0">
+                <p class="text-muted small mb-0">
+                    Данные из Ozon: остатки по складам FBO и схемам доставки.
+                </p>
+                {% if stock_summary %}
+                <div class="stock-summary mt-3">
+                    <div class="row g-3 g-md-4">
+                        <div class="col-sm-4">
+                            <div class="stock-summary-item">
+                                <div class="stock-summary-value">{{ stock_summary.total_warehouses }}</div>
+                                <div class="stock-summary-label">Всего складов с остатками</div>
+                            </div>
+                        </div>
+                        <div class="col-sm-4">
+                            <div class="stock-summary-item">
+                                <div class="stock-summary-value">{{ stock_summary.total_sku }}</div>
+                                <div class="stock-summary-label">Всего SKU на складах</div>
+                            </div>
+                        </div>
+                        <div class="col-sm-4">
+                            <div class="stock-summary-item">
+                                <div class="stock-summary-value">{{ stock_summary.total_units }}</div>
+                                <div class="stock-summary-label">Всего единиц товаров по складам</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+            <button type="button" class="btn btn-primary flex-shrink-0" id="btn-load-stocks"
+                    data-has-ozon="{{ '1' if has_ozon else '0' }}"
+                    {% if not has_ozon %}disabled title="Подключите Ozon API в профиле"{% endif %}>
+                <span class="spinner-border spinner-border-sm d-none me-1" id="stocks-load-spinner" role="status"></span>
+                Обновить остатки
+            </button>
+        </div>
+    </div>
+
+    <div id="stocks-load-message"></div>
+
+    {% if warehouses %}
+    <ul class="nav nav-tabs mb-3" id="stock-view-tabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="stock-tab-warehouses" data-bs-toggle="tab"
+                    data-bs-target="#stock-by-warehouses" type="button" role="tab"
+                    aria-controls="stock-by-warehouses" aria-selected="true">
+                По складам
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="stock-tab-products" data-bs-toggle="tab"
+                    data-bs-target="#stock-by-products" type="button" role="tab"
+                    aria-controls="stock-by-products" aria-selected="false">
+                По товарам
+            </button>
+        </li>
+    </ul>
+
+    <div class="tab-content" id="stock-view-panes">
+        <div class="tab-pane fade show active" id="stock-by-warehouses" role="tabpanel"
+             aria-labelledby="stock-tab-warehouses" tabindex="0">
+            <div class="ozon-orders-card bg-white rounded shadow-sm">
+                <div class="ozon-orders-head row g-0 d-none d-lg-flex">
+                    <div class="col-lg-5 text-center">Склад</div>
+                    <div class="col-lg-2 text-center">SKU</div>
+                    <div class="col-lg-2 text-center">Доступно</div>
+                    <div class="col-lg-2 text-center">Резерв</div>
+                    <div class="col-lg-1 text-center">Всего</div>
+                </div>
+                {% for w in warehouses %}
+                <div class="ozon-order-row">
+                    <div class="row g-3 align-items-center">
+                        <div class="col-lg-5">
+                            <button type="button" class="ozon-posting-link btn btn-link p-0 text-start fw-semibold"
+                                    data-warehouse-name="{{ w.name }}">{{ w.name }}</button>
+                        </div>
+                        <div class="col-lg-2 text-lg-center">{{ w.sku_count }}</div>
+                        <div class="col-lg-2 text-lg-center">{{ w.free_to_sell }}</div>
+                        <div class="col-lg-2 text-lg-center">{{ w.reserved }}</div>
+                        <div class="col-lg-1 text-lg-center">
+                            <span class="ozon-order-price">{{ w.total_quantity }}</span>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="tab-pane fade" id="stock-by-products" role="tabpanel"
+             aria-labelledby="stock-tab-products" tabindex="0">
+            <div class="ozon-orders-card bg-white rounded shadow-sm">
+                <div class="ozon-orders-head row g-0 d-none d-lg-flex">
+                    <div class="col-lg-1 text-center">Фото</div>
+                    <div class="col-lg-5">Наименование</div>
+                    <div class="col-lg-3 text-center">Складов с товаром</div>
+                    <div class="col-lg-3 text-center">Кол-во товара на складах</div>
+                </div>
+                {% for p in products %}
+                <div class="ozon-order-row">
+                    <div class="row g-3 align-items-center">
+                        <div class="col-lg-1 text-center">
+                            {% if p.thumbnail_url %}
+                            <img src="{{ p.thumbnail_url }}" alt="" class="product-thumb" loading="lazy"
+                                 referrerpolicy="no-referrer">
+                            {% else %}
+                            <span class="text-muted small">—</span>
+                            {% endif %}
+                        </div>
+                        <div class="col-lg-5">
+                            <button type="button" class="ozon-posting-link btn btn-link p-0 text-start stock-product-link"
+                                    data-product-key="{{ p.product_key }}">
+                                <div class="product-cell-title" title="{{ p.name }}">{{ p.name }}</div>
+                                <div class="product-cell-meta font-monospace">{{ p.offer_id }}</div>
+                                <div class="product-cell-meta font-monospace">{{ p.barcode or '—' }}</div>
+                            </button>
+                        </div>
+                        <div class="col-lg-3 text-lg-center">{{ p.warehouse_count }}</div>
+                        <div class="col-lg-3 text-lg-center">
+                            <span class="ozon-order-price">{{ p.total_quantity }}</span>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="alert alert-light border text-center text-muted mb-0">
+        Нажмите «Обновить остатки», чтобы загрузить данные из Ozon.
+    </div>
+    {% endif %}
+
+    <div class="modal fade" id="warehouse-stock-modal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div>
+                        <h5 class="modal-title mb-1" id="warehouse-modal-title">—</h5>
+                        <div class="small text-muted" id="warehouse-modal-meta"></div>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+                </div>
+                <div class="modal-body" id="warehouse-modal-body">
+                    <div class="text-center text-muted py-4">Загрузка...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="product-stock-modal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div class="d-flex align-items-start gap-3 min-w-0">
+                        <div id="product-modal-thumb-wrap" class="flex-shrink-0 d-none"></div>
+                        <div class="min-w-0">
+                            <h5 class="modal-title mb-1" id="product-modal-title">—</h5>
+                            <div class="small text-muted" id="product-modal-meta"></div>
+                        </div>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+                </div>
+                <div class="modal-body" id="product-modal-body">
+                    <div class="text-center text-muted py-4">Загрузка...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

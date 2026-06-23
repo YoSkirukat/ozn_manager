@@ -1,0 +1,129 @@
+<div data-page-title="{{ page_title }}" id="promotions-page-root">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4">
+        <div>
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb mb-1 small">
+                    <li class="breadcrumb-item text-muted">Аналитика</li>
+                    <li class="breadcrumb-item active" aria-current="page">Товары в акциях</li>
+                </ol>
+            </nav>
+            <h1 class="h3 mb-0">Товары в акциях</h1>
+        </div>
+        {% if has_ozon %}
+        <button type="button" class="btn btn-primary" id="btn-refresh-promotions"
+                title="Обновить данные из Ozon">
+            <span class="spinner-border spinner-border-sm d-none me-1" id="promotions-refresh-spinner" role="status"></span>
+            Обновить
+        </button>
+        {% endif %}
+    </div>
+
+    {% if not has_ozon %}
+    <div class="alert alert-warning py-2">
+        Для загрузки акций укажите <strong>Client-Id</strong> и <strong>Api-Key</strong> в
+        <a href="{{ url_for('profile.index') }}">профиле</a>.
+    </div>
+    {% endif %}
+
+    {% if load_error %}
+    <div class="alert alert-danger py-2">{{ load_error }}</div>
+    {% endif %}
+
+    {% if has_data %}
+    <div class="card shadow-sm mb-4">
+        <div class="card-body">
+            <div class="row g-3 g-md-4">
+                <div class="col-sm-6">
+                    <div class="stock-summary-item">
+                        <div class="stock-summary-value">{{ summary.promotion_count }}</div>
+                        <div class="stock-summary-label">Активных акций</div>
+                    </div>
+                </div>
+                <div class="col-sm-6">
+                    <div class="stock-summary-item">
+                        <div class="stock-summary-value">{{ summary.product_count }}</div>
+                        <div class="stock-summary-label">Товаров в акциях</div>
+                    </div>
+                </div>
+            </div>
+            <p class="text-muted small mb-0 mt-3">
+                Колонка «На складах» — суммарный остаток по всем складам из отчёта
+                <a href="/reports/stock" data-nav="/reports/stock">Остатки товаров</a>.
+                Дата «В акции с» фиксируется при первой синхронизации товара в Ozon Manager.
+                Для товаров, которые уже участвовали в акции, отображается дата первого обнаружения системой.
+            </p>
+        </div>
+    </div>
+
+    {% for promo in promotions %}
+    <div class="card shadow-sm mb-4 promotion-card">
+        <div class="card-header bg-white d-flex flex-wrap align-items-center gap-2 py-3">
+            <span class="product-promo-tag promotion-card-tag" title="{{ promo.title }}">
+                <span class="product-promo-mark" aria-hidden="true">А</span>
+                <span class="product-promo-name">{{ promo.title }}</span>
+            </span>
+            {% if promo.period_display %}
+            <span class="text-muted small">{{ promo.period_display }}</span>
+            {% endif %}
+            <span class="badge text-bg-secondary ms-lg-auto">{{ promo.product_count }} товаров</span>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0 products-table">
+                    <thead class="table-light">
+                        <tr>
+                            <th class="text-center">Фото</th>
+                            <th class="products-col-product">Товар</th>
+                            <th class="text-center text-nowrap">На складах</th>
+                            <th class="text-center text-nowrap">В акции с</th>
+                            {% if has_ozon %}
+                            <th class="text-end"></th>
+                            {% endif %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for p in promo.products %}
+                        <tr data-promotion-row data-action-id="{{ promo.action_id }}" data-product-id="{{ p.ozon_product_id }}">
+                            <td class="text-center">
+                                {% if p.thumbnail_url %}
+                                <img src="{{ p.thumbnail_url }}" alt="" class="product-thumb" loading="lazy"
+                                     referrerpolicy="no-referrer">
+                                {% else %}
+                                <span class="text-muted small">—</span>
+                                {% endif %}
+                            </td>
+                            <td class="products-col-product">
+                                <div class="product-cell-title" title="{{ p.name }}">{{ p.name }}</div>
+                                <div class="product-cell-meta font-monospace">{{ p.offer_id }}</div>
+                                <div class="product-cell-meta font-monospace">{{ p.barcode }}</div>
+                            </td>
+                            <td class="text-center text-nowrap">
+                                {{ p.warehouse_stock_display }}
+                            </td>
+                            <td class="text-center text-nowrap small text-muted">
+                                {{ p.joined_at_display or '—' }}
+                            </td>
+                            {% if has_ozon %}
+                            <td class="text-end text-nowrap">
+                                <button type="button" class="btn btn-sm btn-outline-danger promotion-remove-btn"
+                                        data-action-id="{{ promo.action_id }}"
+                                        data-product-id="{{ p.ozon_product_id }}"
+                                        data-product-name="{{ p.name }}">
+                                    Удалить из акции
+                                </button>
+                            </td>
+                            {% endif %}
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+    {% elif has_ozon and not load_error %}
+    <div class="alert alert-light border text-center text-muted mb-0">
+        Сейчас нет активных акций с вашими товарами.
+    </div>
+    {% endif %}
+</div>

@@ -1,0 +1,214 @@
+<div class="row g-3" data-page-title="{{ page_title }}">
+    <div class="col-md-3">
+        <div class="dashboard-stat-card dashboard-stat-card--products">
+            <div class="dashboard-stat-card-body">
+                <svg class="dashboard-stat-card-bg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <rect x="3" y="3" width="7" height="7" rx="1.5"/>
+                    <rect x="14" y="3" width="7" height="7" rx="1.5"/>
+                    <rect x="3" y="14" width="7" height="7" rx="1.5"/>
+                    <rect x="14" y="14" width="7" height="7" rx="1.5"/>
+                </svg>
+                <div class="dashboard-stat-card-label dashboard-stat-card-label--spaced">Товары</div>
+                <div class="dashboard-stat-card-value" id="stat-products">—</div>
+            </div>
+            <a href="/products" data-nav="/products" class="dashboard-stat-card-footer">
+                <span>Подробнее</span>
+                <span class="dashboard-stat-card-footer-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/>
+                        <path d="M10 8l4 4-4 4"/>
+                    </svg>
+                </span>
+            </a>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="dashboard-stat-card dashboard-stat-card--orders">
+            <div class="dashboard-stat-card-body">
+                <svg class="dashboard-stat-card-bg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
+                    <rect x="8" y="2" width="8" height="4" rx="1"/>
+                    <path d="M9 12h6"/>
+                    <path d="M9 16h4"/>
+                    <path d="M9 8h.01"/>
+                </svg>
+                <div class="dashboard-stat-card-label">Заказы</div>
+                <div class="dashboard-stat-card-period" id="stat-orders-period"></div>
+                <div class="dashboard-stat-card-value" id="stat-orders">—</div>
+            </div>
+            <a href="/orders" data-nav="/orders" class="dashboard-stat-card-footer" id="stat-orders-link">
+                <span>Подробнее</span>
+                <span class="dashboard-stat-card-footer-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/>
+                        <path d="M10 8l4 4-4 4"/>
+                    </svg>
+                </span>
+            </a>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="dashboard-stat-card dashboard-stat-card--shipments">
+            <div class="dashboard-stat-card-body">
+                <svg class="dashboard-stat-card-bg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/>
+                    <path d="M15 18H9"/>
+                    <path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/>
+                    <circle cx="17" cy="18" r="2"/>
+                    <circle cx="7" cy="18" r="2"/>
+                </svg>
+                <div class="dashboard-stat-card-label">Поставки</div>
+                <div class="dashboard-stat-card-period" id="stat-shipments-period"></div>
+                <div class="dashboard-stat-card-value" id="stat-shipments">—</div>
+            </div>
+            <a href="/shipments" data-nav="/shipments" class="dashboard-stat-card-footer" id="stat-shipments-link">
+                <span>Подробнее</span>
+                <span class="dashboard-stat-card-footer-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/>
+                        <path d="M10 8l4 4-4 4"/>
+                    </svg>
+                </span>
+            </a>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <a href="/analytics/promotions" data-nav="/analytics/promotions"
+           class="dashboard-stat-card dashboard-stat-card--promotions dashboard-stat-card-link text-decoration-none"
+           id="stat-promotions-link">
+            <div class="dashboard-stat-card-body">
+                <svg class="dashboard-stat-card-bg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.77 4.78 4 4 0 0 1-6.75 0 4 4 0 0 1-4.78-4.77 4 4 0 0 1 0-6.76Z"/>
+                    <path d="m15 9-6 6"/>
+                    <circle cx="9.5" cy="9.5" r=".5" fill="currentColor" stroke="none"/>
+                    <circle cx="14.5" cy="14.5" r=".5" fill="currentColor" stroke="none"/>
+                </svg>
+                <div class="dashboard-stat-card-label dashboard-stat-card-label--spaced">Товары в акциях</div>
+                <div class="dashboard-stat-card-value" id="stat-products-in-promotions">—</div>
+            </div>
+            <div class="dashboard-stat-card-footer">
+                <span>Подробнее</span>
+                <span class="dashboard-stat-card-footer-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/>
+                        <path d="M10 8l4 4-4 4"/>
+                    </svg>
+                </span>
+            </div>
+        </a>
+    </div>
+
+    <div class="col-12">
+        <div class="card shadow-sm dashboard-chart-card" id="dashboard-orders-chart-block"
+             data-date-from="{{ chart_date_from.isoformat() }}"
+             data-date-to="{{ chart_date_to.isoformat() }}"
+             data-metric="{{ chart_metric }}"
+             data-compare="{{ '1' if chart_compare else '0' }}">
+            <div class="card-body">
+                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+                    <h2 class="h5 mb-0">Заказы</h2>
+                    <div class="dashboard-chart-controls d-flex flex-wrap align-items-center gap-3">
+                        <div class="dashboard-chart-period-wrap">
+                            <label class="form-label small mb-1" for="dashboard-chart-range">Период</label>
+                            <input type="text" class="form-control form-control-sm dashboard-chart-range-input"
+                                   id="dashboard-chart-range" placeholder="Выберите даты" autocomplete="off"
+                                   data-date-from="{{ chart_date_from.isoformat() }}"
+                                   data-date-to="{{ chart_date_to.isoformat() }}">
+                        </div>
+                        <div>
+                            <span class="form-label small d-block mb-1">Показатель</span>
+                            <div class="btn-group btn-group-sm" role="group" aria-label="Показатель графика">
+                                <input type="radio" class="btn-check" name="chart-metric" id="chart-metric-amount"
+                                       value="amount" autocomplete="off"{% if chart_metric == 'amount' %} checked{% endif %}>
+                                <label class="btn btn-outline-secondary" for="chart-metric-amount">В рублях</label>
+                                <input type="radio" class="btn-check" name="chart-metric" id="chart-metric-count"
+                                       value="count" autocomplete="off"{% if chart_metric != 'amount' %} checked{% endif %}>
+                                <label class="btn btn-outline-secondary" for="chart-metric-count">В количествах</label>
+                            </div>
+                        </div>
+                        <div class="form-check form-switch mb-0 dashboard-chart-compare-wrap">
+                            <input class="form-check-input" type="checkbox" role="switch"
+                                   id="chart-compare-period"{% if chart_compare %} checked{% endif %}>
+                            <label class="form-check-label small" for="chart-compare-period">
+                                Сравнить с прошлой неделей
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                <div class="dashboard-today-summary row g-4 mb-3" id="dashboard-today-summary">
+                    <div class="col-sm-6 col-lg-4 col-xl-3">
+                        <div class="dashboard-summary-col">
+                            <div class="dashboard-summary-title">Количество сегодня</div>
+                            <div class="dashboard-summary-value" id="summary-count-value">—</div>
+                            <div class="dashboard-summary-compare" id="summary-count-day"></div>
+                            <div class="dashboard-summary-compare" id="summary-count-week"></div>
+                        </div>
+                    </div>
+                    <div class="col-sm-6 col-lg-4 col-xl-3">
+                        <div class="dashboard-summary-col">
+                            <div class="dashboard-summary-title">Сумма сегодня</div>
+                            <div class="dashboard-summary-value" id="summary-amount-value">—</div>
+                            <div class="dashboard-summary-compare" id="summary-amount-day"></div>
+                            <div class="dashboard-summary-compare" id="summary-amount-week"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="dashboard-chart-canvas-wrap position-relative">
+                    <div class="dashboard-chart-loading d-none" id="dashboard-chart-loading">
+                        <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
+                    </div>
+                    <canvas id="dashboard-orders-chart" aria-label="График заказов" role="img"></canvas>
+                    <div class="alert alert-light border text-center text-muted mb-0 d-none"
+                         id="dashboard-chart-empty">Нет данных за выбранный период.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-4">
+        <div class="card shadow-sm dashboard-insights-card h-100">
+            <div class="card-body">
+                <h3 class="h6 mb-3">Заказы по складам</h3>
+                <div class="products-table-wrap" id="dashboard-warehouses-wrap">
+                    <table class="table table-hover align-middle bg-white rounded shadow-sm mb-0 products-table dashboard-insights-table">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Склад / кластер</th>
+                                <th class="text-end">Кол-во</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dashboard-warehouses-body"></tbody>
+                    </table>
+                </div>
+                <div class="alert alert-light border text-center text-muted mb-0 d-none"
+                     id="dashboard-warehouses-empty">Нет данных за выбранный период.</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-8">
+        <div class="card shadow-sm dashboard-insights-card h-100">
+            <div class="card-body">
+                <h3 class="h6 mb-3">ТОП товаров по заказам</h3>
+                <div class="products-table-wrap" id="dashboard-top-products-wrap">
+                    <table class="table table-hover align-middle bg-white rounded shadow-sm mb-0 products-table dashboard-insights-table">
+                        <thead class="table-light">
+                            <tr>
+                                <th class="text-center">Фото</th>
+                                <th class="products-col-product">Товар</th>
+                                <th class="text-end">Кол-во</th>
+                                <th class="text-end">Текущий остаток</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dashboard-top-products-body"></tbody>
+                    </table>
+                </div>
+                <div class="alert alert-light border text-center text-muted mb-0 d-none"
+                     id="dashboard-top-products-empty">Нет данных за выбранный период.</div>
+            </div>
+        </div>
+    </div>
+</div>

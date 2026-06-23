@@ -1,0 +1,214 @@
+<div data-page-title="{{ page_title }}">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4">
+        <div>
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb mb-1 small">
+                    <li class="breadcrumb-item text-muted">Аналитика</li>
+                    <li class="breadcrumb-item active" aria-current="page">Планирование поставки</li>
+                </ol>
+            </nav>
+            <h1 class="h3 mb-0">Планирование поставки</h1>
+        </div>
+    </div>
+
+    {% if not has_ozon %}
+    <div class="alert alert-warning py-2">
+        Для формирования отчёта укажите <strong>Client-Id</strong> и <strong>Api-Key</strong> в
+        <a href="{{ url_for('profile.index') }}">профиле</a>.
+    </div>
+    {% endif %}
+
+    <div class="card shadow-sm mb-4">
+        <div class="card-body">
+            <form id="supply-planning-form" class="row g-3 align-items-end">
+                <div class="col-md-4">
+                    <label class="form-label" for="supply-planning-warehouse">Склад</label>
+                    <select class="form-select" id="supply-planning-warehouse" name="warehouse"
+                            {% if not has_ozon or not warehouses %}disabled{% endif %}>
+                        <option value="">Выберите склад</option>
+                        {% for wh in warehouses %}
+                        <option value="{{ wh.name }}" {% if selected_warehouse == wh.name %}selected{% endif %}>
+                            {{ wh.name }} ({{ wh.sku_count }} SKU)
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="orders-period-wrap">
+                    <label class="form-label" for="supply-planning-date-range">Период</label>
+                    <input type="text" class="form-control orders-date-range-input" id="supply-planning-date-range"
+                           placeholder="Выберите даты" autocomplete="off"
+                           data-date-from="{{ date_from.isoformat() if date_from else '' }}"
+                           data-date-to="{{ date_to.isoformat() if date_to else '' }}"
+                           {% if not has_ozon %}disabled{% endif %}>
+                </div>
+                <div class="col-md-auto">
+                    <button type="submit" class="btn btn-primary" id="btn-supply-planning-submit"
+                            {% if not has_ozon %}disabled title="Подключите Ozon API в профиле"{% endif %}>
+                        <span class="spinner-border spinner-border-sm d-none me-1" id="supply-planning-spinner" role="status"></span>
+                        Сформировать
+                    </button>
+                </div>
+            </form>
+            {% if has_ozon and not warehouses %}
+            <p class="text-muted small mb-0 mt-3">
+                Список складов пуст. Загрузите
+                <a href="/reports/stock" data-nav="/reports/stock">остатки товаров</a>
+                или дождитесь регламентного задания.
+            </p>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if report_error %}
+    <div class="alert alert-danger py-2">{{ report_error }}</div>
+    {% endif %}
+
+    {% if report and report.rows %}
+    <div class="card shadow-sm mb-3">
+        <div class="card-body py-3">
+            <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
+            <div class="row g-3 text-center text-md-start flex-grow-1">
+                <div class="col-md-3">
+                    <div class="text-muted small">Склад</div>
+                    <div class="fw-semibold">{{ report.warehouse_name }}</div>
+                </div>
+                <div class="col-md-3">
+                    <div class="text-muted small">Период</div>
+                    <div class="fw-semibold">{{ report.date_from|d }} — {{ report.date_to|d }}</div>
+                </div>
+                <div class="col-md-2">
+                    <div class="text-muted small">SKU</div>
+                    <div class="fw-semibold">{{ report.summary.sku_count }}</div>
+                </div>
+                <div class="col-md-2">
+                    <div class="text-muted small">Приход / расход</div>
+                    <div class="fw-semibold">{{ report.summary.incoming }} / {{ report.summary.outgoing }}</div>
+                </div>
+                <div class="col-md-2">
+                    <div class="text-muted small">Остаток на конец</div>
+                    <div class="fw-semibold">{{ report.summary.closing }}</div>
+                </div>
+            </div>
+            <div class="dropdown" id="supply-planning-export-dropdown"
+                 data-warehouse="{{ report.warehouse_name }}">
+                <button type="button"
+                        class="btn supply-planning-export-btn dropdown-toggle"
+                        data-bs-toggle="dropdown" data-bs-auto-close="true"
+                        aria-expanded="false" title="Экспорт в Excel" aria-label="Экспорт в Excel">
+                    <svg class="supply-planning-export-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                        <path fill="#217346" d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
+                        <path fill="#33a867" d="M14 2v6h6L14 2z"/>
+                        <path fill="#fff" d="M7.2 7.5 10.6 12 7.2 16.5h2.1l2.1-3.3 2.1 3.3h2.1L12.4 12l3.9-4.5h-2.1l-2.1 3.2-2.1-3.2H7.2z"/>
+                    </svg>
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end">
+                    <li>
+                        <button type="button" class="dropdown-item" data-export-type="1c">
+                            Выгрузка для 1С
+                        </button>
+                    </li>
+                    <li>
+                        <button type="button" class="dropdown-item" data-export-type="ozon">
+                            Выгрузка для поставки в OZON
+                        </button>
+                    </li>
+                </ul>
+            </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="products-table-wrap">
+        <table class="table table-hover align-middle bg-white rounded shadow-sm mb-0 products-table supply-planning-table">
+            <thead class="table-light">
+                <tr>
+                    <th class="text-center supply-planning-col-header">Фото</th>
+                    <th class="text-center supply-planning-col-header products-col-product">Товар</th>
+                    <th class="text-center supply-planning-col-header">
+                        <div class="supply-planning-col-title">Заказы FBO</div>
+                        <div class="supply-planning-col-subtitle">ВСЕ СКЛАДЫ</div>
+                    </th>
+                    <th class="text-center supply-planning-col-header">
+                        <div class="supply-planning-col-title">Остатки FBO</div>
+                        <div class="supply-planning-col-subtitle">ВСЕ СКЛАДЫ</div>
+                    </th>
+                    <th class="text-center supply-planning-col-header">
+                        <div class="supply-planning-col-title">Остаток на начало</div>
+                        <div class="supply-planning-col-subtitle" title="{{ report.warehouse_name }}">{{ report.warehouse_name }}</div>
+                    </th>
+                    <th class="text-center supply-planning-col-header">
+                        <div class="supply-planning-col-title">Приход</div>
+                        <div class="supply-planning-col-subtitle" title="{{ report.warehouse_name }}">{{ report.warehouse_name }}</div>
+                    </th>
+                    <th class="text-center supply-planning-col-header">
+                        <div class="supply-planning-col-title">Расход</div>
+                        <div class="supply-planning-col-subtitle" title="{{ report.warehouse_name }}">{{ report.warehouse_name }}</div>
+                    </th>
+                    <th class="text-center supply-planning-col-header">
+                        <div class="supply-planning-col-title">Остаток на конец</div>
+                        <div class="supply-planning-col-subtitle" title="{{ report.warehouse_name }}">{{ report.warehouse_name }}</div>
+                    </th>
+                    <th class="text-center supply-planning-col-header text-nowrap">Отправить</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in report.rows %}
+                <tr>
+                    <td class="text-center">
+                        {% if row.thumbnail_url %}
+                        <img src="{{ row.thumbnail_url }}" alt="" class="product-thumb" loading="lazy"
+                             referrerpolicy="no-referrer">
+                        {% else %}
+                        <span class="text-muted small">—</span>
+                        {% endif %}
+                    </td>
+                    <td class="products-col-product">
+                        <div class="product-cell-title" title="{{ row.name }}">{{ row.name }}</div>
+                        <div class="product-cell-meta font-monospace">
+                            <span class="product-cell-label">Артикул:</span> {{ row.offer_id }}
+                        </div>
+                        <div class="product-cell-meta font-monospace">
+                            <span class="product-cell-label">Баркод:</span> {{ row.barcode }}
+                        </div>
+                        {% if row.profit_markup %}
+                        <div class="product-cell-meta">
+                            <span class="product-cell-label">Прибыль/Наценка:</span>
+                            <span class="{% if row.profit_markup_negative %}product-profit-negative{% endif %}">{{ row.profit_markup }}</span>
+                        </div>
+                        {% endif %}
+                    </td>
+                    <td class="text-center">{{ row.fbo_orders }}</td>
+                    <td class="text-center">{{ row.fbo_stock }}</td>
+                    <td class="text-center">{{ row.opening }}</td>
+                    <td class="text-center">{{ row.incoming }}</td>
+                    <td class="text-center">{{ row.outgoing }}</td>
+                    <td class="text-center fw-semibold">{{ row.closing }}</td>
+                    <td class="text-center">
+                        <input type="number" class="form-control form-control-sm supply-planning-send-input"
+                               min="0" step="1" inputmode="numeric" value=""
+                               data-barcode="{{ row.barcode }}"
+                               data-offer-id="{{ row.offer_id }}"
+                               data-name="{{ row.name }}"
+                               aria-label="Количество к отправке">
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+            <tfoot class="table-light">
+                <tr>
+                    <td colspan="2" class="text-end fw-semibold">Итого</td>
+                    <td class="text-center fw-semibold">{{ report.summary.fbo_orders }}</td>
+                    <td class="text-center fw-semibold">{{ report.summary.fbo_stock }}</td>
+                    <td class="text-center fw-semibold">{{ report.summary.opening }}</td>
+                    <td class="text-center fw-semibold">{{ report.summary.incoming }}</td>
+                    <td class="text-center fw-semibold">{{ report.summary.outgoing }}</td>
+                    <td class="text-center fw-semibold">{{ report.summary.closing }}</td>
+                    <td></td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+    {% elif report_requested and not report_error %}
+    <div class="alert alert-info py-2">За выбранный период нет данных по этому складу.</div>
+    {% endif %}
+</div>

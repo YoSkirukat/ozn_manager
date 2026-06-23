@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Версия {{ note.version }} — Ozon Manager{% endblock %}
+{% block content %}
+<div class="mb-4">
+    <a href="{{ url_for('admin.releases') }}" class="text-decoration-none small">&larr; Назад</a>
+    <h1 class="h3 mt-2">Редактирование v{{ note.version }}</h1>
+</div>
+{% with messages = get_flashed_messages(with_categories=true) %}
+{% if messages %}{% for category, message in messages %}
+<div class="alert alert-{{ category }} py-2">{{ message }}</div>
+{% endfor %}{% endif %}{% endwith %}
+<div class="col-lg-8">
+    <div class="card shadow-sm">
+        <div class="card-body">
+            <form method="post">
+                <div class="mb-3">
+                    <label class="form-label" for="version">Версия</label>
+                    <input class="form-control" id="version" name="version" value="{{ note.version }}" required>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="released_at">Дата</label>
+                    <input class="form-control" id="released_at" name="released_at" type="date"
+                           value="{{ note.released_at.isoformat() }}" required>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="items">Изменения</label>
+                    <textarea class="form-control" id="items" name="items" rows="10" required>{{ items_text }}</textarea>
+                </div>
+                <button class="btn btn-primary" type="submit">Сохранить</button>
+                <a class="btn btn-outline-secondary" href="{{ url_for('main.changelog') }}">Отмена</a>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
