@@ -36,7 +36,7 @@
             </thead>
             <tbody id="products-table-body">
                 {% for p in products %}
-                <tr>
+                <tr data-product-id="{{ p.id }}">
                     <td class="text-center">
                         {% if p.thumbnail_url %}
                         <img src="{{ p.thumbnail_url }}" alt="" class="product-thumb" loading="lazy"
@@ -61,12 +61,15 @@
                         </div>
                         {% endif %}
                     </td>
-                    <td class="text-end text-nowrap">
-                        {% if p.purchase_price is not none %}
-                        {{ p.purchase_price_display() }} ₽
-                        {% else %}
-                        <span class="text-muted">—</span>
-                        {% endif %}
+                    <td class="text-end text-nowrap products-col-purchase-price">
+                        <input type="text"
+                               class="form-control form-control-sm product-purchase-price-input text-end"
+                               data-product-id="{{ p.id }}"
+                               value="{% if p.purchase_price is not none %}{{ p.purchase_price_display() }}{% endif %}"
+                               placeholder="—"
+                               inputmode="decimal"
+                               autocomplete="off"
+                               aria-label="Цена закупки для {{ p.name|e }}">
                     </td>
                     <td class="text-end text-nowrap">
                         {% if p.uses_promotional_sale_price() %}
@@ -75,7 +78,7 @@
                         {{ p.effective_sale_price()|money }} ₽
                         {% endif %}
                     </td>
-                    <td class="text-end products-col-profit">
+                    <td class="text-end products-col-profit" data-profit-cell>
                         {% if p.can_show_profit_markup() %}
                         <div class="product-profit-lines">
                             {% for scheme_label, line, negative in p.profit_markup_scheme_rows() %}

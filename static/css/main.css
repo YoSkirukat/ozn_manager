@@ -1262,6 +1262,40 @@ body {
     white-space: nowrap;
 }
 
+.products-col-purchase-price {
+    min-width: 6.5rem;
+}
+
+.product-purchase-price-input {
+    border: 1px solid transparent;
+    background: transparent;
+    width: 6.5rem;
+    padding: 0.2rem 0.35rem;
+    margin-left: auto;
+    box-shadow: none;
+}
+
+.product-purchase-price-input:hover {
+    border-color: var(--bs-border-color);
+    background: #fff;
+}
+
+.product-purchase-price-input:focus {
+    border-color: var(--bs-primary);
+    background: #fff;
+    box-shadow: 0 0 0 0.15rem rgba(13, 110, 253, 0.15);
+}
+
+.product-purchase-price-input.is-saving {
+    opacity: 0.6;
+    pointer-events: none;
+}
+
+.product-purchase-price-input.is-error {
+    border-color: var(--bs-danger);
+    background: #fff;
+}
+
 .supply-planning-table thead th {
     text-align: center;
     vertical-align: middle;

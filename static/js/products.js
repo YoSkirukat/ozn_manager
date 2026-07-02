@@ -167,6 +167,100 @@ function bindProductCommissionButtons(root) {
     });
 }
 
+function renderProfitMarkupCell(cell, profitRows) {
+    if (!cell) return;
+    if (!profitRows || !profitRows.length) {
+        cell.innerHTML = '<span class="text-muted">—</span>';
+        return;
+    }
+    const lines = profitRows.map((row) => {
+        const negativeClass = row.negative ? " product-profit-negative" : "";
+        return `<div class="product-profit-line">
+            <span class="product-profit-scheme">${escapeHtml(row.scheme_label)}:</span>
+            <span class="product-profit-values${negativeClass}">${escapeHtml(row.line)}</span>
+        </div>`;
+    }).join("");
+    cell.innerHTML = `<div class="product-profit-lines">${lines}</div>`;
+}
+
+function normalizePurchasePriceInput(value) {
+    return String(value ?? "").trim().replace(/\s+/g, "");
+}
+
+async function saveProductPurchasePrice(input) {
+    const productId = input.dataset.productId;
+    if (!productId || input.dataset.saving === "1") return;
+
+    const newValue = normalizePurchasePriceInput(input.value);
+    const oldValue = input.dataset.savedValue ?? "";
+
+    if (newValue === oldValue) return;
+
+    input.dataset.saving = "1";
+    input.classList.add("is-saving");
+    input.classList.remove("is-error");
+
+    const row = input.closest("tr");
+    const profitCell = row ? row.querySelector("[data-profit-cell]") : null;
+
+    try {
+        const res = await fetch(`/api/products/${encodeURIComponent(productId)}/purchase-price`, {
+            method: "PATCH",
+            headers: {
+                "Content-Type": "application/json",
+                "X-Requested-With": "XMLHttpRequest",
+            },
+            body: JSON.stringify({ purchase_price: newValue || null }),
+        });
+        const data = await res.json();
+
+        if (!data.ok) {
+            input.classList.add("is-error");
+            if (typeof showToast === "function") {
+                showToast(data.error || "Не удалось сохранить цену", "danger");
+            }
+            return;
+        }
+
+        const display = data.purchase_price_display || "";
+        input.value = display;
+        input.dataset.savedValue = normalizePurchasePriceInput(display);
+        renderProfitMarkupCell(profitCell, data.profit_rows);
+    } catch (err) {
+        input.classList.add("is-error");
+        if (typeof showToast === "function") {
+            showToast(`Ошибка: ${err.message}`, "danger");
+        }
+    } finally {
+        input.dataset.saving = "0";
+        input.classList.remove("is-saving");
+    }
+}
+
+function bindProductPurchasePriceInputs(root) {
+    const scope = root || document;
+    scope.querySelectorAll(".product-purchase-price-input").forEach((input) => {
+        if (input.dataset.bound === "1") return;
+        input.dataset.bound = "1";
+        input.dataset.savedValue = normalizePurchasePriceInput(input.value);
+
+        input.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") {
+                e.preventDefault();
+                input.blur();
+            } else if (e.key === "Escape") {
+                input.value = input.dataset.savedValue || "";
+                input.classList.remove("is-error");
+                input.blur();
+            }
+        });
+
+        input.addEventListener("blur", () => {
+            saveProductPurchasePrice(input);
+        });
+    });
+}
+
 function initProductsPage() {
     const btn = document.getElementById("btn-sync-ozon");
     if (btn && btn.dataset.bound !== "1") {
@@ -212,6 +306,7 @@ function initProductsPage() {
     }
 
     bindProductCommissionButtons(document);
+    bindProductPurchasePriceInputs(document);
 
     const commissionModalEl = document.getElementById("product-commission-modal");
     if (commissionModalEl && commissionModalEl.dataset.bound !== "1") {

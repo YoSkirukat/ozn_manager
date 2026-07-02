@@ -162,16 +162,7 @@ def fetch_purchase_prices_map(url: str) -> dict[str, Decimal]:
     return _parse_workbook(resp.content)
 
 
-def apply_purchase_prices(user) -> dict:
-    url = (user.purchase_prices_url or "").strip()
-    if not url:
-        return {"ok": True, "skipped": True, "updated": 0, "message": None}
-
-    try:
-        price_map = fetch_purchase_prices_map(url)
-    except Exception as exc:
-        return {"ok": False, "error": str(exc), "updated": 0}
-
+def _apply_price_map(user, price_map: dict[str, Decimal]) -> dict:
     products = Product.query.filter_by(user_id=user.id).all()
     updated = 0
     for product in products:
@@ -192,3 +183,23 @@ def apply_purchase_prices(user) -> dict:
         "total_in_file": len(price_map),
         "message": f"Закупочные цены обновлены: {updated} из {len(price_map)} в файле.",
     }
+
+
+def apply_purchase_prices_from_content(user, content: bytes) -> dict:
+    try:
+        price_map = _parse_workbook(content)
+    except Exception as exc:
+        return {"ok": False, "error": str(exc), "updated": 0}
+    return _apply_price_map(user, price_map)
+
+
+def apply_purchase_prices(user) -> dict:
+    url = (user.purchase_prices_url or "").strip()
+    if not url:
+        return {"ok": True, "skipped": True, "updated": 0, "message": None}
+
+    try:
+        price_map = fetch_purchase_prices_map(url)
+    except Exception as exc:
+        return {"ok": False, "error": str(exc), "updated": 0}
+    return _apply_price_map(user, price_map)

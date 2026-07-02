@@ -114,8 +114,8 @@
             <div class="card-header">Внешние данные</div>
             <div class="card-body">
                 <p class="text-muted small mb-3">
-                    Укажите ссылку на XLS/XLSX с колонками <strong>Баркод</strong> и <strong>Цена закуп</strong>.
-                    Поддерживаются прямые ссылки и таблицы Google Sheets.
+                    Укажите ссылку на XLS/XLSX с колонками <strong>Баркод</strong> и <strong>Цена закуп</strong>,
+                    или загрузите файл вручную. Поддерживаются прямые ссылки и таблицы Google Sheets.
                 </p>
                 <form method="post" action="{{ url_for('profile.save_external') }}">
                     <div class="mb-3">
@@ -124,8 +124,16 @@
                                value="{{ current_user.purchase_prices_url or '' }}"
                                placeholder="https://...">
                     </div>
-                    <button class="btn btn-primary" type="submit">Сохранить</button>
+                    <div class="d-flex flex-wrap gap-2 align-items-center">
+                        <button class="btn btn-primary" type="submit">Сохранить</button>
+                        <button type="button" class="btn btn-outline-primary" id="btn-upload-purchase-prices">
+                            Загрузить вручную
+                        </button>
+                        <input type="file" class="d-none" id="purchase-prices-file-input"
+                               accept=".xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+                    </div>
                 </form>
+                <div id="purchase-prices-upload-message" class="mt-2"></div>
             </div>
         </div>
 
@@ -202,6 +210,7 @@
 {% endblock %}
 
 {% block extra_scripts %}
+<script src="{{ url_for('static', filename='js/profile_external.js') }}" defer></script>
 <script src="{{ url_for('static', filename='js/scheduled_tasks.js') }}" defer></script>
 <script src="{{ url_for('static', filename='js/notification_settings.js') }}" defer></script>
 {% endblock %}
