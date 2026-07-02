@@ -31,6 +31,9 @@ def check_notifications_for_user(user: User) -> None:
     if "new_shipment" in enabled or "shipment_status_changed" in enabled:
         _check_shipments(user)
 
+    if "new_return" in enabled or "return_status_changed" in enabled:
+        _check_returns(user)
+
     from app.services.warehouse_slot_monitor import (
         check_warehouse_slot_watches,
         user_has_warehouse_slot_watches,
@@ -79,6 +82,24 @@ def _check_shipments(user: User) -> None:
             )
     except Exception:
         logger.exception("Notification shipments check error for user %s", user.id)
+
+
+def _check_returns(user: User) -> None:
+    if not user.has_ozon_credentials():
+        return
+
+    try:
+        from app.services.returns_report import run_returns_check
+
+        result = run_returns_check(user, notify=True)
+        if not result.get("ok"):
+            logger.debug(
+                "Notification returns check failed for user %s: %s",
+                user.id,
+                result.get("error"),
+            )
+    except Exception:
+        logger.exception("Notification returns check error for user %s", user.id)
 
 
 def run_notifications_check(app) -> None:

@@ -239,6 +239,87 @@ def notify_shipment_status_changed(user, shipment: Shipment, old_status: str) ->
     return 1 if notification else 0
 
 
+def _return_entity_id(return_id: str) -> int:
+    digest = abs(hash(str(return_id or ""))) % 2_147_483_646
+    return max(1, digest)
+
+
+def notify_new_returns(user, returns: list[dict]) -> int:
+    if not returns:
+        return 0
+    if not is_notification_enabled(user.id, "new_return"):
+        return 0
+
+    created = 0
+    for item in returns:
+        return_id = str(item.get("return_id") or "")
+        if not return_id:
+            continue
+        number = str(item.get("application_number") or return_id)
+        scheme = str(item.get("scheme") or "—")
+        status = str(item.get("status") or "—")
+        reason = str(item.get("reason") or "—")
+        body = f"{scheme} · {status} · {reason}"
+        notification = create_notification(
+            user.id,
+            event_slug="new_return",
+            title=f"Новый возврат {number}",
+            body=body,
+            target_url="/reports/returns",
+            entity_type="return",
+            entity_id=_return_entity_id(return_id),
+            payload={
+                "return_id": return_id,
+                "application_number": number,
+                "scheme": scheme,
+                "status": status,
+                "reason": reason,
+                "posting_number": str(item.get("posting_number") or ""),
+            },
+        )
+        if notification:
+            created += 1
+    return created
+
+
+def notify_return_status_changed(user, item: dict, old_status: str) -> int:
+    if not is_notification_enabled(user.id, "return_status_changed"):
+        return 0
+
+    return_id = str(item.get("return_id") or "")
+    if not return_id:
+        return 0
+
+    new_status = str(item.get("status") or "")
+    old_status = str(old_status or "")
+    if not new_status or old_status == new_status:
+        return 0
+
+    number = str(item.get("application_number") or return_id)
+    scheme = str(item.get("scheme") or "—")
+    body = f"{old_status} → {new_status} · {scheme}"
+
+    notification = create_notification(
+        user.id,
+        event_slug="return_status_changed",
+        title=f"Возврат {number}: смена статуса",
+        body=body,
+        target_url="/reports/returns",
+        entity_type="return",
+        entity_id=_return_entity_id(return_id),
+        dedupe_key=f"{old_status}->{new_status}",
+        payload={
+            "return_id": return_id,
+            "application_number": number,
+            "scheme": scheme,
+            "old_status": old_status,
+            "new_status": new_status,
+            "posting_number": str(item.get("posting_number") or ""),
+        },
+    )
+    return 1 if notification else 0
+
+
 def notify_warehouse_slot_available(user, watch, warehouse_row: dict) -> int:
     if not is_notification_enabled(user.id, "warehouse_slot_available"):
         return 0

@@ -538,7 +538,43 @@ def get_returns_report_cache(user_id: int) -> dict | None:
         return None
 
 
-def run_returns_check(user) -> dict:
+def _diff_returns_cache(
+    old_cache: dict | None,
+    items: list[dict],
+) -> tuple[list[dict], list[tuple[dict, str]]]:
+    """Сравнение кэша с новыми данными: новые возвраты и смены статуса."""
+    if old_cache is None:
+        return [], []
+
+    old_returns = old_cache.get("returns")
+    if not isinstance(old_returns, list):
+        return [], []
+
+    old_by_id = {
+        str(row.get("return_id") or ""): row
+        for row in old_returns
+        if str(row.get("return_id") or "")
+    }
+
+    new_items = [
+        item
+        for item in items
+        if str(item.get("return_id") or "") not in old_by_id
+    ]
+    status_changes: list[tuple[dict, str]] = []
+    for item in items:
+        return_id = str(item.get("return_id") or "")
+        if not return_id or return_id not in old_by_id:
+            continue
+        old_status = str(old_by_id[return_id].get("status") or "")
+        new_status = str(item.get("status") or "")
+        if old_status and new_status and old_status != new_status:
+            status_changes.append((item, old_status))
+
+    return new_items, status_changes
+
+
+def run_returns_check(user, *, notify: bool = True) -> dict:
     """Регламентная проверка возвратов за последние 30 дней."""
     from app.services.returns_period import default_returns_period
 
@@ -546,12 +582,27 @@ def run_returns_check(user) -> dict:
         return {"ok": False, "error": "Подключите Ozon API в профиле.", "skipped": True}
 
     date_from, date_to = default_returns_period()
+    old_cache = get_returns_report_cache(user.id)
     report = build_returns_report(user, date_from, date_to)
     if not report.get("ok"):
         return report
 
     items = report.get("returns") or []
     summary = report.get("summary") or {"return_count": len(items)}
+
+    if notify:
+        new_items, status_changes = _diff_returns_cache(old_cache, items)
+        if new_items or status_changes:
+            from app.services.notifications_service import (
+                notify_new_returns,
+                notify_return_status_changed,
+            )
+
+            if new_items:
+                notify_new_returns(user, new_items)
+            for item, old_status in status_changes:
+                notify_return_status_changed(user, item, old_status)
+
     save_returns_report_cache(user.id, date_from, date_to, items, summary)
 
     return {

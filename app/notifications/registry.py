@@ -38,6 +38,18 @@ NOTIFICATION_EVENTS: tuple[NotificationEvent, ...] = (
         description="Уведомление, когда отслеживаемый склад доступен для поставки FBO.",
         implemented=True,
     ),
+    NotificationEvent(
+        slug="new_return",
+        title="Новый возврат",
+        description="Уведомление при появлении новой заявки на возврат.",
+        implemented=True,
+    ),
+    NotificationEvent(
+        slug="return_status_changed",
+        title="Изменение статуса возврата",
+        description="Уведомление при смене статуса заявки на возврат.",
+        implemented=True,
+    ),
 )
 
 EVENT_BY_SLUG = {event.slug: event for event in NOTIFICATION_EVENTS}
