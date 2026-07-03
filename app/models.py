@@ -120,6 +120,22 @@ class Product(db.Model):
     def barcode_display(self) -> str:
         return self.barcode or "—"
 
+    def ozon_marketplace_product_slug(self) -> str | None:
+        text = str(self.barcode or "").strip()
+        if not text:
+            return None
+        if text.upper().startswith("OZN"):
+            text = text[3:].strip()
+        if not text or not text.isdigit():
+            return None
+        return text
+
+    def ozon_marketplace_url(self) -> str | None:
+        slug = self.ozon_marketplace_product_slug()
+        if not slug:
+            return None
+        return f"https://www.ozon.ru/product/{slug}"
+
     def purchase_price_display(self) -> str:
         from app.money_fmt import format_money_ru
 

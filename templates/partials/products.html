@@ -46,7 +46,12 @@
                         {% endif %}
                     </td>
                     <td class="products-col-product">
-                        <div class="product-cell-title" title="{{ p.name }}">{{ p.name }}</div>
+                        {% set ozon_product_url = p.ozon_marketplace_url() %}
+                        <div class="product-cell-title" title="{{ p.name }}">
+                            <span class="product-cell-title-text">{{ p.name }}</span>{% if ozon_product_url %}<a href="{{ ozon_product_url }}" class="product-marketplace-link"
+                               target="_blank" rel="noopener noreferrer"
+                               title="Открыть на Ozon" aria-label="Открыть {{ p.name|e }} на Ozon"><i class="bi bi-box-arrow-up-right" aria-hidden="true"></i></a>{% endif %}
+                        </div>
                         <div class="product-cell-meta font-monospace">{{ p.offer_id or '—' }}</div>
                         <div class="product-cell-meta font-monospace">{{ p.barcode_display() }}</div>
                         {% set promos = p.promotion_titles(product_actions) %}

@@ -1148,6 +1148,34 @@ body {
     -webkit-box-orient: vertical;
 }
 
+.products-table .product-cell-title {
+    display: block;
+    overflow: visible;
+    text-overflow: unset;
+    -webkit-line-clamp: unset;
+    -webkit-box-orient: unset;
+}
+
+.product-cell-title-text {
+    display: inline;
+}
+
+.product-marketplace-link {
+    display: inline;
+    vertical-align: baseline;
+    margin-left: 5px;
+    color: #6b7280;
+    text-decoration: none;
+    font-size: 0.85rem;
+    line-height: 1;
+    white-space: nowrap;
+    transition: color 0.15s ease;
+}
+
+.product-marketplace-link:hover {
+    color: #005bff;
+}
+
 .product-cell-meta {
     font-size: 0.8125rem;
     color: #6b7280;
