@@ -237,6 +237,41 @@ def _parse_release_date(value: str):
         return None
 
 
+def _validate_release_form(
+    version: str,
+    released_at,
+    items: list[str],
+    *,
+    exclude_id: int | None = None,
+) -> list[str]:
+    errors = []
+    if not version:
+        errors.append("Укажите номер версии.")
+    if not released_at:
+        errors.append("Укажите дату в формате ГГГГ-ММ-ДД.")
+    if not items:
+        errors.append("Добавьте хотя бы один пункт изменений.")
+    if version:
+        existing = ReleaseNote.query.filter_by(version=version).first()
+        if existing and existing.id != exclude_id:
+            errors.append("Версия с таким номером уже существует.")
+    return errors
+
+
+def _load_admin_releases():
+    published = (
+        ReleaseNote.query.filter_by(is_published=True)
+        .order_by(ReleaseNote.released_at.desc())
+        .all()
+    )
+    drafts = (
+        ReleaseNote.query.filter_by(is_published=False)
+        .order_by(ReleaseNote.updated_at.desc())
+        .all()
+    )
+    return published, drafts
+
+
 @admin_bp.route("/releases", methods=["GET", "POST"])
 @login_required
 @admin_required
@@ -248,28 +283,24 @@ def releases():
         released_at = _parse_release_date(released_at_str)
         items = _parse_release_items(items_raw)
 
-        errors = []
-        if not version:
-            errors.append("Укажите номер версии.")
-        if not released_at:
-            errors.append("Укажите дату в формате ГГГГ-ММ-ДД.")
-        if not items:
-            errors.append("Добавьте хотя бы один пункт изменений.")
-        if ReleaseNote.query.filter_by(version=version).first():
-            errors.append("Версия с таким номером уже существует.")
-
+        errors = _validate_release_form(version, released_at, items)
         if errors:
             for msg in errors:
                 flash(msg, "danger")
         else:
-            note = ReleaseNote(version=version, released_at=released_at, items=items)
+            note = ReleaseNote(
+                version=version,
+                released_at=released_at,
+                items=items,
+                is_published=False,
+            )
             db.session.add(note)
             db.session.commit()
-            flash(f"Версия {version} опубликована.", "success")
+            flash(f"Версия {version} сохранена как черновик.", "success")
             return redirect(url_for("admin.releases"))
 
-    releases_list = ReleaseNote.query.order_by(ReleaseNote.released_at.desc()).all()
-    return render_template("admin/releases.html", releases=releases_list)
+    published, drafts = _load_admin_releases()
+    return render_template("admin/releases.html", published=published, drafts=drafts)
 
 
 @admin_bp.route("/releases/<int:note_id>/edit", methods=["GET", "POST"])
@@ -285,20 +316,16 @@ def edit_release(note_id):
         version = (request.form.get("version") or "").strip()
         released_at_str = (request.form.get("released_at") or "").strip()
         items_raw = request.form.get("items") or ""
+        action = (request.form.get("action") or "save").strip()
         released_at = _parse_release_date(released_at_str)
         items = _parse_release_items(items_raw)
 
-        errors = []
-        if not version:
-            errors.append("Укажите номер версии.")
-        if not released_at:
-            errors.append("Укажите дату в формате ГГГГ-ММ-ДД.")
-        if not items:
-            errors.append("Добавьте хотя бы один пункт изменений.")
-        existing = ReleaseNote.query.filter_by(version=version).first()
-        if existing and existing.id != note.id:
-            errors.append("Версия с таким номером уже существует.")
-
+        errors = _validate_release_form(
+            version,
+            released_at,
+            items,
+            exclude_id=note.id,
+        )
         if errors:
             for msg in errors:
                 flash(msg, "danger")
@@ -306,12 +333,40 @@ def edit_release(note_id):
             note.version = version
             note.released_at = released_at
             note.items = items
+            if action == "publish":
+                note.is_published = True
+                db.session.commit()
+                flash(f"Версия {version} опубликована.", "success")
+                return redirect(url_for("main.changelog"))
             db.session.commit()
-            flash(f"Версия {version} обновлена.", "success")
-            return redirect(url_for("main.changelog"))
+            flash(f"Версия {version} сохранена.", "success")
+            return redirect(url_for("admin.releases"))
 
     items_text = "\n".join(note.items_list)
     return render_template("admin/release_edit.html", note=note, items_text=items_text)
+
+
+@admin_bp.route("/releases/<int:note_id>/publish", methods=["POST"])
+@login_required
+@admin_required
+def publish_release(note_id):
+    note = db.session.get(ReleaseNote, note_id)
+    if not note:
+        flash("Запись не найдена.", "danger")
+        return redirect(url_for("admin.releases"))
+
+    if note.is_published:
+        flash(f"Версия {note.version} уже опубликована.", "warning")
+        return redirect(url_for("admin.releases"))
+
+    if not note.items_list:
+        flash("Добавьте хотя бы один пункт изменений перед публикацией.", "danger")
+        return redirect(url_for("admin.edit_release", note_id=note.id))
+
+    note.is_published = True
+    db.session.commit()
+    flash(f"Версия {note.version} опубликована.", "success")
+    return redirect(url_for("main.changelog"))
 
 
 @admin_bp.route("/releases/<int:note_id>/delete", methods=["POST"])

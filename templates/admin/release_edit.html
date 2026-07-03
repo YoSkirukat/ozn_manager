@@ -3,7 +3,14 @@
 {% block content %}
 <div class="mb-4">
     <a href="{{ url_for('admin.releases') }}" class="text-decoration-none small">&larr; Назад</a>
-    <h1 class="h3 mt-2">Редактирование v{{ note.version }}</h1>
+    <h1 class="h3 mt-2">
+        Редактирование v{{ note.version }}
+        {% if note.is_published %}
+        <span class="badge text-bg-success align-middle">Опубликовано</span>
+        {% else %}
+        <span class="badge text-bg-secondary align-middle">Черновик</span>
+        {% endif %}
+    </h1>
 </div>
 {% with messages = get_flashed_messages(with_categories=true) %}
 {% if messages %}{% for category, message in messages %}
@@ -26,8 +33,16 @@
                     <label class="form-label" for="items">Изменения</label>
                     <textarea class="form-control" id="items" name="items" rows="10" required>{{ items_text }}</textarea>
                 </div>
-                <button class="btn btn-primary" type="submit">Сохранить</button>
-                <a class="btn btn-outline-secondary" href="{{ url_for('main.changelog') }}">Отмена</a>
+                <div class="d-flex flex-wrap gap-2">
+                    <button class="btn btn-primary" type="submit" name="action" value="save">Сохранить</button>
+                    {% if not note.is_published %}
+                    <button class="btn btn-success" type="submit" name="action" value="publish"
+                            onclick="return confirm('Опубликовать версию {{ note.version }}?');">
+                        Опубликовать
+                    </button>
+                    {% endif %}
+                    <a class="btn btn-outline-secondary" href="{{ url_for('admin.releases') }}">Отмена</a>
+                </div>
             </form>
         </div>
     </div>

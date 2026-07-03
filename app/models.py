@@ -594,6 +594,7 @@ class ReleaseNote(db.Model):
     version = db.Column(db.String(32), unique=True, nullable=False, index=True)
     released_at = db.Column(db.Date, nullable=False, index=True)
     items = db.Column(db.JSON, nullable=False, default=list)
+    is_published = db.Column(db.Boolean, nullable=False, default=False, index=True)
     created_at = db.Column(db.DateTime(timezone=True), default=utcnow, nullable=False)
     updated_at = db.Column(
         db.DateTime(timezone=True),

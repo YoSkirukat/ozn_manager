@@ -16,6 +16,7 @@
         <div class="card shadow-sm">
             <div class="card-header">Новая версия</div>
             <div class="card-body">
+                <p class="text-muted small">Версия сохраняется как черновик и не отображается в журнале до публикации.</p>
                 <form method="post">
                     <div class="mb-3">
                         <label class="form-label" for="version">Версия</label>
@@ -31,16 +32,44 @@
                                   placeholder="Каждый пункт с новой строки"></textarea>
                         <div class="form-text">Один пункт — одна строка.</div>
                     </div>
-                    <button class="btn btn-primary w-100" type="submit">Опубликовать</button>
+                    <button class="btn btn-primary w-100" type="submit">Сохранить черновик</button>
                 </form>
             </div>
         </div>
     </div>
     <div class="col-lg-7">
+        <div class="card shadow-sm mb-4">
+            <div class="card-header">Черновики</div>
+            <ul class="list-group list-group-flush">
+            {% for r in drafts %}
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                    <div>
+                        <strong>v{{ r.version }}</strong>
+                        <span class="badge text-bg-secondary ms-1">Черновик</span>
+                        <span class="text-muted small">дата {{ r.released_at.strftime('%d.%m.%Y') }}</span>
+                        <div class="small text-muted">{{ r.items_list|length }} пункт(ов)</div>
+                    </div>
+                    <div class="d-flex gap-1 flex-wrap justify-content-end">
+                        <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.edit_release', note_id=r.id) }}">Изменить</a>
+                        <form method="post" action="{{ url_for('admin.publish_release', note_id=r.id) }}" class="d-inline"
+                              onsubmit="return confirm('Опубликовать версию {{ r.version }}?');">
+                            <button type="submit" class="btn btn-sm btn-success">Опубликовать</button>
+                        </form>
+                        <form method="post" action="{{ url_for('admin.delete_release', note_id=r.id) }}" class="d-inline"
+                              onsubmit="return confirm('Удалить черновик {{ r.version }}?');">
+                            <button type="submit" class="btn btn-sm btn-outline-danger">Удалить</button>
+                        </form>
+                    </div>
+                </li>
+            {% else %}
+                <li class="list-group-item text-muted">Нет черновиков</li>
+            {% endfor %}
+            </ul>
+        </div>
         <div class="card shadow-sm">
             <div class="card-header">Опубликованные версии</div>
             <ul class="list-group list-group-flush">
-            {% for r in releases %}
+            {% for r in published %}
                 <li class="list-group-item d-flex justify-content-between align-items-center">
                     <div>
                         <strong>v{{ r.version }}</strong>
@@ -56,7 +85,7 @@
                     </div>
                 </li>
             {% else %}
-                <li class="list-group-item text-muted">Нет версий</li>
+                <li class="list-group-item text-muted">Нет опубликованных версий</li>
             {% endfor %}
             </ul>
         </div>

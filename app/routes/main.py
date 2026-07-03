@@ -408,7 +408,11 @@ def analytics_warehouse_slots():
 @main_bp.route("/changelog")
 @login_required
 def changelog():
-    releases = ReleaseNote.query.order_by(ReleaseNote.released_at.desc()).all()
+    releases = (
+        ReleaseNote.query.filter_by(is_published=True)
+        .order_by(ReleaseNote.released_at.desc())
+        .all()
+    )
     return _render_page(
         "/changelog",
         releases=releases,

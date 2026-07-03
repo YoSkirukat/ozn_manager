@@ -64,6 +64,7 @@ def register_commands(app):
         note = ReleaseNote(
             version="1.0.0",
             released_at=date.today(),
+            is_published=True,
             items=[
                 "Запуск Ozon Manager: авторизация, дашборд, профиль с подключением Ozon Seller API.",
                 "Управление пользователями для администратора.",
