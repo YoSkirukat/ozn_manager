@@ -13,6 +13,20 @@ from app.ozon.finance import (
     service_label,
     _parse_operation_date,
 )
+from app.services.order_buyout import (
+    BUYOUT_RAW_CACHE_KEYS,
+    apply_buyout_to_products,
+    build_buyout_index_for_orders,
+    clear_buyout_cache,
+    _cached_buyout_amount,
+)
+from app.services.order_returns import (
+    detect_financial_refund,
+    order_has_financial_refund,
+    order_has_refund_after_delivery,
+    persist_financial_refund_cache,
+    refund_after_delivery_tooltip,
+)
 from app.services.order_images import resolve_thumbnail_url
 
 
@@ -227,11 +241,11 @@ def _apply_product_margins(
         else:
             purchase_total = _decimal(purchase_unit) * _decimal(product.get("quantity") or 1)
             if is_international:
-                customer_price_rub = product.get("customer_price_rub")
-                if customer_price_rub is None:
+                buyout_amount = product.get("buyout_amount")
+                if buyout_amount is None:
                     row["margin"] = None
                 else:
-                    row["margin"] = _money(_decimal(customer_price_rub) - purchase_total)
+                    row["margin"] = _money(_decimal(buyout_amount) - purchase_total)
             else:
                 row["margin"] = _money(accrued_share - purchase_total)
         enriched.append(row)
@@ -260,7 +274,7 @@ def _cached_total_accrued(raw: dict | None) -> float | None:
         return None
 
 
-FINANCIAL_RAW_CACHE_KEYS = ("_total_accrued", "_margin", "_accruals", "_accruals_version")
+FINANCIAL_RAW_CACHE_KEYS = ("_total_accrued", "_margin", "_accruals", "_accruals_version", "_financial_refund")
 PROMOTION_RAW_CACHE_KEYS = ("_product_promotions",)
 
 ACCRUALS_CACHE_VERSION = 2
@@ -309,10 +323,17 @@ def _cached_accruals(raw: dict | None) -> list[dict] | None:
 
 
 def _cached_margin(raw: dict | None) -> float | None:
-    if not isinstance(raw, dict) or not _financial_cache_usable(raw):
+    if not isinstance(raw, dict):
         return None
     value = raw.get("_margin")
     if value is None:
+        return None
+    if _cached_buyout_amount(raw) is not None:
+        try:
+            return _money(value)
+        except (TypeError, ValueError):
+            return None
+    if not _financial_cache_usable(raw):
         return None
     try:
         return _money(value)
@@ -325,6 +346,10 @@ def _persist_financial_cache(order, accruals: list[dict], total_accrued: float) 
         return
     _persist_total_accrued_cache(order, total_accrued)
     _persist_accruals_cache(order, accruals)
+    persist_financial_refund_cache(
+        order,
+        detect_financial_refund(accruals=accruals, total_accrued=total_accrued),
+    )
 
 
 def _persist_total_accrued_cache(order, total_accrued: float) -> None:
@@ -348,7 +373,7 @@ def merge_order_raw_data(
     if not isinstance(old_raw, dict):
         return merged
     if old_status == ORDER_STATUS_DELIVERED and new_status == ORDER_STATUS_DELIVERED:
-        for key in FINANCIAL_RAW_CACHE_KEYS:
+        for key in (*FINANCIAL_RAW_CACHE_KEYS, *BUYOUT_RAW_CACHE_KEYS):
             if key in old_raw:
                 merged[key] = old_raw[key]
     for key in PROMOTION_RAW_CACHE_KEYS:
@@ -426,25 +451,39 @@ def compute_order_margin(
     user=None,
     use_transactions: bool = True,
     product_lookup: dict[str, Product] | None = None,
+    buyout_index: dict[str, list[dict]] | None = None,
 ) -> float | None:
     if order.status != ORDER_STATUS_DELIVERED:
         return None
 
-    from app.services.order_returns import order_has_post_delivery_return
+    from app.services.order_returns import order_has_refund_after_delivery
 
-    if order_has_post_delivery_return(order):
+    if order_has_refund_after_delivery(order):
         return None
 
     raw = order.raw_data if isinstance(order.raw_data, dict) else {}
-    if not use_transactions and not order.is_international():
-        cached_margin = _cached_margin(raw)
-        if cached_margin is not None:
-            return cached_margin
+    cached_margin = _cached_margin(raw)
+    if cached_margin is not None and not use_transactions:
+        return cached_margin
 
-    # Для международных заказов маржа опирается на цену покупки в RUB и закуп,
-    # поэтому внешний API для начислений не требуется.
-    if order.is_international():
-        total_accrued = 0.0
+    products = _product_rows(
+        order.user_id,
+        raw,
+        order.thumbnail_url,
+        product_lookup=product_lookup,
+    )
+    is_international = order.is_international()
+    if is_international:
+        apply_buyout_to_products(
+            order,
+            products,
+            user=user,
+            use_api=use_transactions,
+            buyout_index=buyout_index,
+        )
+        total_accrued = _cached_buyout_amount(
+            order.raw_data if isinstance(order.raw_data, dict) else {}
+        ) or 0.0
     else:
         total_accrued = resolve_total_accrued(
             order,
@@ -453,19 +492,15 @@ def compute_order_margin(
             use_transactions=use_transactions,
         )
     products = _apply_product_margins(
-        _product_rows(
-            order.user_id,
-            raw,
-            order.thumbnail_url,
-            product_lookup=product_lookup,
-        ),
+        products,
         total_accrued,
-        is_international=order.is_international(),
+        is_international=is_international,
         calculate=True,
     )
     margin = _sum_order_margin(products)
-    if order.is_international():
-        _persist_margin_cache(order, margin)
+    if is_international:
+        if _cached_buyout_amount(order.raw_data if isinstance(order.raw_data, dict) else {}) is not None:
+            _persist_margin_cache(order, margin)
     elif use_transactions and _financial_cache_usable(
         order.raw_data if isinstance(order.raw_data, dict) else {}
     ):
@@ -479,6 +514,9 @@ def attach_order_margins(orders: list, user, *, use_transactions: bool = False) 
         return
 
     product_lookup = _product_lookup(user.id) if use_transactions else None
+    buyout_index = None
+    if use_transactions and user.has_ozon_credentials():
+        buyout_index = build_buyout_index_for_orders(user, orders)
     pending_commit = False
 
     with db.session.no_autoflush:
@@ -487,19 +525,15 @@ def attach_order_margins(orders: list, user, *, use_transactions: bool = False) 
                 order._list_margin = None
                 continue
 
-            from app.services.order_returns import order_has_post_delivery_return
+            from app.services.order_returns import order_has_refund_after_delivery
 
-            if order_has_post_delivery_return(order):
+            if order_has_refund_after_delivery(order):
                 order._list_margin = None
                 continue
 
             raw = order.raw_data if isinstance(order.raw_data, dict) else {}
             cached_margin = _cached_margin(raw)
-            if (
-                cached_margin is not None
-                and not use_transactions
-                and not order.is_international()
-            ):
+            if cached_margin is not None and not use_transactions:
                 order._list_margin = cached_margin
                 continue
 
@@ -510,6 +544,7 @@ def attach_order_margins(orders: list, user, *, use_transactions: bool = False) 
                 user=user,
                 use_transactions=use_transactions,
                 product_lookup=product_lookup,
+                buyout_index=buyout_index,
             )
             raw_after = order.raw_data if isinstance(order.raw_data, dict) else {}
             cached_after = _cached_total_accrued(raw_after)
@@ -530,7 +565,13 @@ def _detail_items_from_operation(op: dict) -> list[dict]:
     items = []
     revenue = _decimal(op.get("accruals_for_sale"))
     if revenue != 0:
-        items.append({"label": "Выручка", "amount": _money(revenue), "negative": False})
+        items.append(
+            {
+                "label": "Выручка",
+                "amount": _money(abs(revenue)),
+                "negative": revenue < 0,
+            }
+        )
 
     commission = _decimal(op.get("sale_commission"))
     if commission != 0:
@@ -715,45 +756,77 @@ def build_order_detail(
     raw = raw if isinstance(raw, dict) else (order.raw_data if isinstance(order.raw_data, dict) else {})
     order_date = format_datetime(order.order_date)
     user = user or order.user
+    is_international = order.is_international()
     use_transactions = use_live_financials
     if (
-        not use_live_financials
+        not is_international
+        and not use_live_financials
         and _cached_accruals(raw) is None
         and user
         and user.has_ozon_credentials()
     ):
         use_transactions = True
-    accruals, total_accrued = _accrual_rows(
-        raw,
-        _decimal(order.total),
-        user=user,
-        posting_number=order.ozon_order_id,
-        order_date=order.order_date,
-        use_transactions=use_transactions,
-    )
-    if not use_transactions:
-        cached_accrued = _cached_total_accrued(raw)
-        if cached_accrued is not None:
-            total_accrued = cached_accrued
-    elif user and user.has_ozon_credentials():
-        _persist_financial_cache(order, accruals, total_accrued)
-    from app.services.order_returns import order_has_post_delivery_return
-
-    has_return = order_has_post_delivery_return(order)
+    has_return = order_has_refund_after_delivery(order)
     calculate_margin = order.status == ORDER_STATUS_DELIVERED and not has_return
-    products = _apply_product_margins(
-        _product_rows(order.user_id, raw, order.thumbnail_url),
-        total_accrued,
-        is_international=order.is_international(),
-        calculate=calculate_margin,
-    )
-    if (
-        use_live_financials
-        and user
-        and user.has_ozon_credentials()
-        and _financial_cache_usable(order.raw_data if isinstance(order.raw_data, dict) else {})
-    ):
-        _persist_margin_cache(order, _sum_order_margin(products) if calculate_margin else None)
+    products = _product_rows(order.user_id, raw, order.thumbnail_url)
+
+    if is_international:
+        buyout_total = apply_buyout_to_products(
+            order,
+            products,
+            user=user,
+            use_api=use_live_financials,
+        )
+        total_accrued = buyout_total
+        accruals = (
+            [
+                {
+                    "type": "row",
+                    "label": "Выкуп маркетплейса",
+                    "date": "—",
+                    "amount": buyout_total,
+                    "negative": False,
+                }
+            ]
+            if buyout_total
+            else []
+        )
+        products = _apply_product_margins(
+            products,
+            total_accrued,
+            is_international=True,
+            calculate=calculate_margin,
+        )
+        if use_live_financials and buyout_total:
+            _persist_margin_cache(order, _sum_order_margin(products) if calculate_margin else None)
+    else:
+        accruals, total_accrued = _accrual_rows(
+            raw,
+            _decimal(order.total),
+            user=user,
+            posting_number=order.ozon_order_id,
+            order_date=order.order_date,
+            use_transactions=use_transactions,
+        )
+        if not use_transactions:
+            cached_accrued = _cached_total_accrued(raw)
+            if cached_accrued is not None:
+                total_accrued = cached_accrued
+        elif user and user.has_ozon_credentials():
+            _persist_financial_cache(order, accruals, total_accrued)
+        products = _apply_product_margins(
+            products,
+            total_accrued,
+            is_international=False,
+            calculate=calculate_margin,
+        )
+        if (
+            use_live_financials
+            and user
+            and user.has_ozon_credentials()
+            and _financial_cache_usable(order.raw_data if isinstance(order.raw_data, dict) else {})
+        ):
+            _persist_margin_cache(order, _sum_order_margin(products) if calculate_margin else None)
 
     return {
         "ok": True,
@@ -768,6 +841,8 @@ def build_order_detail(
             "customer_currency": order.customer_currency(),
             "margin_currency": "RUB",
             "has_post_delivery_return": has_return,
+            "has_financial_refund": order_has_financial_refund(order),
+            "refund_tooltip": refund_after_delivery_tooltip(order),
         },
         "products": products,
         "clusters": _cluster_info(raw),
@@ -795,6 +870,9 @@ def get_order_detail(user, order_id: int, *, refresh: bool = False) -> dict:
                 raw["_total_accrued"] = cached_accrued
             if cached_margin is not None:
                 raw["_margin"] = cached_margin
+            for key in BUYOUT_RAW_CACHE_KEYS:
+                if key in old_raw:
+                    raw[key] = old_raw[key]
             for key in PROMOTION_RAW_CACHE_KEYS:
                 if key in old_raw:
                     raw[key] = old_raw[key]

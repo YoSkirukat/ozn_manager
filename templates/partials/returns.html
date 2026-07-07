@@ -69,6 +69,7 @@
                     <th class="text-center text-nowrap">Схема</th>
                     <th class="text-center text-nowrap">Дата статуса</th>
                     <th class="text-center text-nowrap">Номер заявки</th>
+                    <th class="text-center text-nowrap">Номер заказа</th>
                     <th class="text-center text-nowrap">Статус</th>
                     <th class="text-center">Фото</th>
                     <th class="text-center products-col-product">Товар</th>
@@ -85,6 +86,13 @@
                     <td class="text-center text-nowrap small">
                         <div class="returns-request-number font-monospace">{{ item.application_number }}</div>
                         <div class="returns-request-type">{{ item.application_type }}</div>
+                    </td>
+                    <td class="text-center text-nowrap small">
+                        {% if item.posting_number %}
+                        <div class="returns-order-number font-monospace">{{ item.posting_number }}</div>
+                        {% else %}
+                        <span class="text-muted">—</span>
+                        {% endif %}
                     </td>
                     <td class="text-center text-nowrap small">
                         <span class="return-status return-status--{{ item.status_tone }}">{{ item.status }}</span>

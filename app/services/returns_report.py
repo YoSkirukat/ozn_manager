@@ -338,6 +338,46 @@ def _product_fields(catalog: dict[str, Product], product: dict) -> dict:
     }
 
 
+def _resolve_return_order_number(row: dict, *extra_sources: dict | None) -> str:
+    for source in (row, *extra_sources):
+        if not isinstance(source, dict):
+            continue
+        for key in ("posting_number", "order_number"):
+            value = str(source.get(key) or "").strip()
+            if value:
+                return value
+    return ""
+
+
+def _enrich_return_order_numbers(items: list[dict], user_id: int) -> None:
+    """Подставляет номер заказа из БД для rFBS-заявок вида 12345678-R1."""
+    import re
+
+    from app.models import ORDER_STATUS_DELIVERED, Order
+
+    pattern = re.compile(r"^(\d+)-R\d+$", re.IGNORECASE)
+    for item in items:
+        if str(item.get("posting_number") or "").strip():
+            continue
+        application_number = str(item.get("application_number") or "").strip()
+        match = pattern.match(application_number)
+        if not match:
+            continue
+        prefix = match.group(1)
+        candidates = (
+            Order.query.filter(
+                Order.user_id == user_id,
+                Order.status == ORDER_STATUS_DELIVERED,
+                Order.ozon_order_id.like(f"{prefix}-%"),
+            )
+            .with_entities(Order.ozon_order_id)
+            .all()
+        )
+        if len(candidates) != 1:
+            continue
+        item["posting_number"] = str(candidates[0][0] or "").strip()
+
+
 def _normalize_v1_return_row(row: dict, catalog: dict[str, Product]) -> dict:
     product = row.get("product") if isinstance(row.get("product"), dict) else {}
     visual = row.get("visual") if isinstance(row.get("visual"), dict) else {}
@@ -358,7 +398,7 @@ def _normalize_v1_return_row(row: dict, catalog: dict[str, Product]) -> dict:
         "status": display_name,
         "status_tone": return_status_tone(sys_name, display_name),
         "reason": str(row.get("return_reason_name") or "—"),
-        "posting_number": str(row.get("posting_number") or "").strip(),
+        "posting_number": _resolve_return_order_number(row),
         **product_fields,
     }
 
@@ -387,11 +427,7 @@ def _normalize_rfbs_return_row(
     if app_type == "Возврат" and "отмен" in reason.lower():
         app_type = "Отмена"
 
-    posting_number = str(
-        payload.get("posting_number")
-        or row.get("posting_number")
-        or ""
-    ).strip()
+    posting_number = _resolve_return_order_number(row, payload, detail)
 
     return {
         "return_id": f"rfbs:{row.get('return_id') or row.get('id') or ''}",
@@ -470,6 +506,7 @@ def build_returns_report(user, date_from: date, date_to: date) -> dict:
             _normalize_return_row(row, catalog, rfbs_details, v1_status_dates)
             for row in rows
         ]
+        _enrich_return_order_numbers(items, user.id)
         items.sort(
             key=lambda item: (
                 item["status_date"] or datetime.min.replace(tzinfo=timezone.utc),

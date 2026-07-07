@@ -20,7 +20,7 @@ from app.services.order_details import (
     _product_rows,
     attach_order_margins,
 )
-from app.services.order_returns import build_post_delivery_return_postings
+from app.services.order_returns import build_post_delivery_return_postings, order_has_financial_refund
 
 EXCEL_HEADERS = (
     "Дата",
@@ -183,7 +183,7 @@ def build_onec_export_rows(orders: list[Order], user: User) -> list[tuple]:
     for order in orders:
         if order.status != ORDER_STATUS_DELIVERED:
             continue
-        if order.ozon_order_id in returned_postings:
+        if order.ozon_order_id in returned_postings or order_has_financial_refund(order):
             continue
         raw = order.raw_data if isinstance(order.raw_data, dict) else {}
         total_accrued = _order_total_accrued(order)

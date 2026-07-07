@@ -70,7 +70,7 @@
                     </div>
                 </div>
                 <div class="orders-toolbar-row orders-toolbar-row--filters">
-                <div class="orders-filter-wrap">
+                <div class="orders-filter-wrap{% if selected_statuses %} orders-filter-wrap--active{% endif %}">
                     <label class="form-label">Статус</label>
                     <div class="dropdown orders-filter-dropdown">
                         <button type="button"
@@ -98,7 +98,7 @@
                         </ul>
                     </div>
                 </div>
-                <div class="orders-filter-wrap">
+                <div class="orders-filter-wrap{% if selected_schemes %} orders-filter-wrap--active{% endif %}">
                     <label class="form-label">Схема</label>
                     <div class="dropdown orders-filter-dropdown">
                         <button type="button"
@@ -126,7 +126,7 @@
                         </ul>
                     </div>
                 </div>
-                <div class="orders-filter-wrap">
+                <div class="orders-filter-wrap{% if selected_delivery %} orders-filter-wrap--active{% endif %}">
                     <label class="form-label">Доставка</label>
                     <div class="dropdown orders-filter-dropdown">
                         <button type="button"
@@ -206,10 +206,10 @@
                     <span class="ozon-status-badge ozon-status-{{ o.status_badge_class() }}">
                         {{ o.status_display() }}
                     </span>
-                    {% if o.has_post_delivery_return() %}
+                    {% if o.has_refund_after_delivery() %}
                     <span class="product-return-mark product-return-mark--inline"
-                          title="Возврат после доставки"
-                          aria-label="Возврат после доставки">В</span>
+                          title="{{ o.refund_after_delivery_tooltip() }}"
+                          aria-label="Возврат средств после доставки">В</span>
                     {% endif %}
                     {% if o.is_international() %}
                     <div class="ozon-order-international mt-1">Международный</div>
@@ -238,7 +238,7 @@
                     <div class="product-cell-meta font-monospace">{{ cell.barcode }}</div>
                 </div>
                 <div class="col-lg-1 text-lg-end">
-                    {% if o.has_post_delivery_return() %}
+                    {% if o.has_refund_after_delivery() %}
                     <div class="ozon-order-margin text-muted">—</div>
                     {% else %}
                     {% set margin = o.order_margin(current_user) %}

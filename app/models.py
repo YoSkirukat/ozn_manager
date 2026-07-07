@@ -382,10 +382,18 @@ class Order(db.Model):
     def bought_on_promotion(self) -> bool:
         return bool(self.promotion_purchase_info().get("in_promotion"))
 
-    def has_post_delivery_return(self) -> bool:
-        from app.services.order_returns import order_has_post_delivery_return
+    def has_refund_after_delivery(self) -> bool:
+        from app.services.order_returns import order_has_refund_after_delivery
 
-        return order_has_post_delivery_return(self)
+        return order_has_refund_after_delivery(self)
+
+    def has_post_delivery_return(self) -> bool:
+        return self.has_refund_after_delivery()
+
+    def refund_after_delivery_tooltip(self) -> str:
+        from app.services.order_returns import refund_after_delivery_tooltip
+
+        return refund_after_delivery_tooltip(self)
 
     def order_margin(self, user=None):
         if hasattr(self, "_list_margin"):

@@ -14,6 +14,7 @@ from app.services.order_details import (
     merge_order_raw_data,
     resolve_total_accrued,
 )
+from app.services.order_buyout import build_buyout_index_for_orders, clear_buyout_cache
 from app.services.order_images import resolve_thumbnail_url
 from app.services.order_promotions import apply_product_promotions, fetch_known_promotion_titles
 
@@ -30,6 +31,7 @@ def _refresh_orders_financials_batch(user, orders: list[Order]) -> dict:
 
     product_lookup = _product_lookup(user.id)
     updated = 0
+    buyout_index = build_buyout_index_for_orders(user, orders)
 
     with db.session.no_autoflush:
         for index, order in enumerate(orders, start=1):
@@ -37,13 +39,17 @@ def _refresh_orders_financials_batch(user, orders: list[Order]) -> dict:
                 continue
             before_raw = dict(order.raw_data) if isinstance(order.raw_data, dict) else {}
             clear_financial_cache(order)
+            if order.is_international():
+                clear_buyout_cache(order)
             raw = order.raw_data if isinstance(order.raw_data, dict) else before_raw
-            resolve_total_accrued(order, raw, user=user, use_transactions=True)
+            if not order.is_international():
+                resolve_total_accrued(order, raw, user=user, use_transactions=True)
             compute_order_margin(
                 order,
                 user=user,
                 use_transactions=True,
                 product_lookup=product_lookup,
+                buyout_index=buyout_index,
             )
             after_raw = order.raw_data if isinstance(order.raw_data, dict) else {}
             if after_raw != before_raw:

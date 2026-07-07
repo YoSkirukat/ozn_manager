@@ -60,11 +60,13 @@ function setFilterControlState(kind, checkedCount, labelText) {
     const labelEl = document.getElementById(`orders-filter-${kind}-label`);
     const clearBtn = document.getElementById(`orders-filter-${kind}-clear`);
     const toggleBtn = document.getElementById(`orders-filter-${kind}-btn`);
+    const wrapEl = toggleBtn?.closest(".orders-filter-wrap");
     const active = checkedCount > 0;
 
     if (labelEl) labelEl.textContent = labelText;
     if (clearBtn) clearBtn.classList.toggle("d-none", !active);
     if (toggleBtn) toggleBtn.classList.toggle("orders-filter-btn--active", active);
+    if (wrapEl) wrapEl.classList.toggle("orders-filter-wrap--active", active);
 }
 
 function updateOrdersFilterButtons() {
@@ -391,8 +393,9 @@ function renderOrderModal(data) {
     if (metaEl) {
         const scheme = header.scheme || "";
         const schemeClass = header.scheme_class || "fbs";
+        const refundTooltip = escapeHtml(header.refund_tooltip || "Возврат средств после доставки");
         const returnMark = header.has_post_delivery_return
-            ? ' <span class="product-return-mark product-return-mark--inline" title="Возврат после доставки" aria-label="Возврат после доставки">В</span>'
+            ? ` <span class="product-return-mark product-return-mark--inline" title="${refundTooltip}" aria-label="Возврат средств после доставки">В</span>`
             : "";
         metaEl.innerHTML = `${escapeHtml(header.order_date || "—")} &middot; ` +
             `<span class="ozon-scheme ozon-scheme-${schemeClass}">${escapeHtml(scheme)}</span>` +
@@ -468,10 +471,20 @@ function renderMarginCell(value) {
 
 function renderAccrualsBlock(data) {
     const accruals = data.accruals || [];
-    const marginHint = data.header?.is_international
-        ? '<div class="small text-muted mb-2">Для международного заказа маржа считается как: цена покупки в RUB − цена закуп.</div>'
+    const header = data.header || {};
+    const marginHint = header.is_international
+        ? '<div class="small text-muted mb-2">Для международного заказа маржа считается как: начисление по выкупу маркетплейса − цена закуп.</div>'
+        : "";
+    const refundAlert = header.has_post_delivery_return
+        ? `<div class="alert alert-warning py-2 px-3 small mb-3" role="status">${
+            escapeHtml(
+                header.refund_tooltip
+                    || "Ozon оформил возврат средств по заказу. Статус может оставаться «Доставлен», итого начислено учитывает сторно."
+            )
+        }</div>`
         : "";
     let html = `<h6 class="mb-3">Начисления</h6>
+        ${refundAlert}
         ${marginHint}
         <table class="table table-sm order-accruals-table mb-0">
         <thead><tr>
@@ -510,9 +523,13 @@ function renderAccrualsBlock(data) {
         </tr>`;
     });
 
+    const totalAccrued = Number(data.total_accrued || 0);
+    const totalCls = totalAccrued < 0 ? "order-accrual-negative" : "";
+    const totalSign = totalAccrued < 0 ? "−" : "";
+
     html += `<tr class="order-accrual-total">
         <td colspan="2">Итого начислено</td>
-        <td class="text-end text-nowrap">${formatMoney(data.total_accrued || 0)}</td>
+        <td class="text-end text-nowrap ${totalCls}">${totalSign}${formatMoney(Math.abs(totalAccrued))}</td>
     </tr>`;
     html += "</tbody></table>";
     return html;
