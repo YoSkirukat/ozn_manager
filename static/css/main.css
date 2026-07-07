@@ -1422,8 +1422,45 @@ body {
 }
 
 /* Фильтр периода на странице заказов */
+.orders-toolbar-layout {
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+}
+
 .orders-toolbar-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 0.75rem 1rem;
+    min-width: 0;
+}
+
+.orders-toolbar-row--primary {
+    justify-content: space-between;
     flex-wrap: wrap;
+}
+
+.orders-toolbar-primary-left {
+    display: flex;
+    align-items: flex-end;
+    gap: 0.75rem 1rem;
+    flex-wrap: wrap;
+    min-width: 0;
+}
+
+.orders-toolbar-row--filters {
+    flex-wrap: wrap;
+    padding-top: 0.85rem;
+    border-top: 1px solid #e9ecef;
+}
+
+.orders-toolbar-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    flex: 0 0 auto;
+    margin-left: auto;
 }
 
 .orders-period-wrap {
@@ -1432,18 +1469,9 @@ body {
     flex: 0 1 auto;
 }
 
-.orders-show-wrap,
-.orders-actions-wrap {
+.orders-show-wrap {
     flex: 0 0 auto;
-    width: auto;
-    max-width: 100%;
-}
-
-.orders-actions-group {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    flex-wrap: wrap;
+    padding-bottom: 1px;
 }
 
 .orders-export-btn {
@@ -1486,19 +1514,21 @@ body {
 }
 
 .orders-date-range-input {
-    width: 15rem;
+    width: 14rem;
     min-width: 11rem;
     max-width: 100%;
 }
 
 .orders-filter-wrap {
-    flex: 0 0 auto;
+    flex: 1 1 10rem;
     width: auto;
-    max-width: 100%;
+    max-width: 13rem;
+    min-width: 9rem;
 }
 
 .orders-filter-dropdown {
-    display: inline-block;
+    display: block;
+    width: 100%;
     max-width: 100%;
 }
 
@@ -1507,8 +1537,7 @@ body {
     align-items: center;
     flex-wrap: nowrap;
     gap: 0.15rem;
-    width: max-content;
-    max-width: min(16rem, 100%);
+    width: 100%;
     font-size: 0.875rem;
     padding: 0.375rem 0.4rem 0.375rem 0.65rem;
     text-align: left;
@@ -1521,8 +1550,8 @@ body {
 }
 
 .orders-filter-label {
-    flex: 0 1 auto;
-    max-width: 11rem;
+    flex: 1 1 auto;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -1580,6 +1609,28 @@ body {
 
 .orders-filter-item:hover {
     background-color: #f8f9fa;
+}
+
+@media (max-width: 767.98px) {
+    .orders-toolbar-row--primary {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .orders-toolbar-actions {
+        width: 100%;
+        margin-left: 0;
+        justify-content: stretch;
+    }
+
+    #btn-load-orders-financials {
+        flex: 1 1 auto;
+    }
+
+    .orders-filter-wrap {
+        flex: 1 1 calc(50% - 0.5rem);
+        max-width: none;
+    }
 }
 
 /* Сводка остатков по складам */

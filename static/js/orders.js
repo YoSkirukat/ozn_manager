@@ -33,7 +33,8 @@ function getUrlPeriod() {
 function getOrdersFiltersFromDom() {
     const status = [...document.querySelectorAll(".orders-filter-status:checked")].map((el) => el.value);
     const scheme = [...document.querySelectorAll(".orders-filter-scheme:checked")].map((el) => el.value);
-    return { status, scheme };
+    const delivery = document.querySelector(".orders-filter-delivery:checked")?.value || "";
+    return { status, scheme, delivery };
 }
 
 function filterCheckboxLabel(input) {
@@ -49,6 +50,7 @@ function buildOrdersPageUrl(from, to, filters = null) {
     if (from && to) {
         params.set("status", (f.status || []).join(","));
         params.set("scheme", (f.scheme || []).join(","));
+        params.set("delivery", f.delivery || "");
     }
     const query = params.toString();
     return query ? `/orders?${query}` : "/orders";
@@ -83,12 +85,26 @@ function updateOrdersFilterButtons() {
         schemeLabel = `Схемы (${schemeChecked.length})`;
     }
     setFilterControlState("scheme", schemeChecked.length, schemeLabel);
+
+    const deliveryValue = document.querySelector(".orders-filter-delivery:checked")?.value || "";
+    let deliveryLabel = "Все заказы";
+    if (deliveryValue === "local") {
+        deliveryLabel = "Локальные";
+    } else if (deliveryValue === "international") {
+        deliveryLabel = "Международные";
+    }
+    setFilterControlState("delivery", deliveryValue ? 1 : 0, deliveryLabel);
 }
 
 function resetOrdersFilter(kind) {
-    document.querySelectorAll(`.orders-filter-${kind}`).forEach((input) => {
-        input.checked = false;
-    });
+    if (kind === "delivery") {
+        const allRadio = document.querySelector('.orders-filter-delivery[value=""]');
+        if (allRadio) allRadio.checked = true;
+    } else {
+        document.querySelectorAll(`.orders-filter-${kind}`).forEach((input) => {
+            input.checked = false;
+        });
+    }
     updateOrdersFilterButtons();
     applyOrdersFilters();
 }
@@ -125,6 +141,7 @@ function downloadOrdersExport(exportType) {
         to,
         status: (filters.status || []).join(","),
         scheme: (filters.scheme || []).join(","),
+        delivery: filters.delivery || "",
     });
     window.location.assign(`/api/orders/export?${params}`);
 }
@@ -152,7 +169,7 @@ function resizeOrdersDateInput() {
 function syncOrdersUrlFromToolbar() {
     const params = new URLSearchParams(window.location.search);
     const hasPeriod = params.has("from") && params.has("to");
-    const hasFilters = params.has("status") && params.has("scheme");
+    const hasFilters = params.has("status") && params.has("scheme") && params.has("delivery");
     if (hasPeriod && hasFilters) return;
 
     const toolbar = document.getElementById("orders-toolbar");
@@ -170,24 +187,35 @@ function syncOrdersUrlFromToolbar() {
         .split(",")
         .map((s) => s.trim())
         .filter(Boolean);
+    const delivery = toolbar.dataset.delivery || "";
 
     history.replaceState(
         history.state,
         "",
-        buildOrdersPageUrl(from, to, { status, scheme }),
+        buildOrdersPageUrl(from, to, { status, scheme, delivery }),
     );
 }
 
 function initOrdersFilters() {
     const statusMenu = document.getElementById("orders-filter-status-menu");
     const schemeMenu = document.getElementById("orders-filter-scheme-menu");
-    [statusMenu, schemeMenu].forEach((menu) => {
+    const deliveryMenu = document.getElementById("orders-filter-delivery-menu");
+    [statusMenu, schemeMenu, deliveryMenu].forEach((menu) => {
         if (!menu || menu.dataset.bound === "1") return;
         menu.dataset.bound = "1";
         menu.addEventListener("click", (e) => e.stopPropagation());
     });
 
     document.querySelectorAll(".orders-filter-status, .orders-filter-scheme").forEach((input) => {
+        if (input.dataset.bound === "1") return;
+        input.dataset.bound = "1";
+        input.addEventListener("change", () => {
+            updateOrdersFilterButtons();
+            applyOrdersFilters();
+        });
+    });
+
+    document.querySelectorAll(".orders-filter-delivery").forEach((input) => {
         if (input.dataset.bound === "1") return;
         input.dataset.bound = "1";
         input.addEventListener("change", () => {

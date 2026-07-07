@@ -51,6 +51,7 @@ def fetch_orders_for_export(
     date_to: date,
     statuses: list[str] | None = None,
     schemes: list[str] | None = None,
+    delivery: str = "",
 ) -> list[Order]:
     start, end = utc_bounds_for_local_dates(date_from, date_to)
     query = Order.query.filter(
@@ -63,6 +64,9 @@ def fetch_orders_for_export(
     if schemes:
         query = query.filter(Order.scheme.in_(schemes))
     orders = query.order_by(Order.order_date.desc(), Order.id.desc()).all()
+    from app.services.orders_filters import apply_delivery_filter
+
+    orders = apply_delivery_filter(orders, delivery)
     attach_order_margins(orders, user, use_transactions=False)
     return orders
 
@@ -258,8 +262,16 @@ def export_orders_excel(
     export_type: str,
     statuses: list[str] | None = None,
     schemes: list[str] | None = None,
+    delivery: str = "",
 ) -> tuple[bytes, str]:
-    orders = fetch_orders_for_export(user, date_from, date_to, statuses, schemes)
+    orders = fetch_orders_for_export(
+        user,
+        date_from,
+        date_to,
+        statuses,
+        schemes,
+        delivery,
+    )
     period = f"{date_from.isoformat()}_{date_to.isoformat()}"
 
     if export_type == "1c":

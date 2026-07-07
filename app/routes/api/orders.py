@@ -8,7 +8,12 @@ from app.models import Order
 from app.services.order_details import get_order_detail
 from app.services.order_sync import load_orders_from_ozon
 from app.services.orders_export import export_orders_excel
-from app.services.orders_filters import _normalize_schemes, _normalize_statuses, _parse_csv_param
+from app.services.orders_filters import (
+    _normalize_delivery,
+    _normalize_schemes,
+    _normalize_statuses,
+    _parse_csv_param,
+)
 from app.services.orders_period import save_orders_period
 
 orders_api_bp = Blueprint("orders_api", __name__)
@@ -89,6 +94,7 @@ def export_orders():
 
     statuses = _normalize_statuses(_parse_csv_param(request.args.get("status")))
     schemes = _normalize_schemes(_parse_csv_param(request.args.get("scheme")))
+    delivery = _normalize_delivery(request.args.get("delivery"))
 
     content, filename = export_orders_excel(
         current_user,
@@ -97,6 +103,7 @@ def export_orders():
         export_type=export_type,
         statuses=statuses or None,
         schemes=schemes or None,
+        delivery=delivery,
     )
     safe_name = secure_filename(filename) or "orders.xlsx"
     return Response(

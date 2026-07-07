@@ -7,7 +7,12 @@ from sqlalchemy import and_, or_
 from app.authz import is_admin
 from app.datetime_fmt import utc_bounds_for_local_dates
 from app.models import Order, Product, ReleaseNote, Shipment, SUPPLY_ACTIVE_STATUSES, SUPPLY_HIDDEN_LIST_STATUSES
-from app.services.orders_filters import resolve_orders_filters, scheme_options, status_options
+from app.services.orders_filters import (
+    apply_delivery_filter,
+    resolve_orders_filters,
+    scheme_options,
+    status_options,
+)
 from app.services.orders_period import get_orders_period, save_orders_period, save_shipments_period
 from app.version import get_app_version
 
@@ -121,7 +126,7 @@ def orders():
     if not date_from or not date_to:
         date_from, date_to = get_orders_period()
 
-    selected_statuses, selected_schemes = resolve_orders_filters()
+    selected_statuses, selected_schemes, selected_delivery = resolve_orders_filters()
 
     items = []
     if date_from and date_to:
@@ -137,6 +142,7 @@ def orders():
         if selected_schemes:
             query = query.filter(Order.scheme.in_(selected_schemes))
         items = query.order_by(Order.order_date.desc()).all()
+        items = apply_delivery_filter(items, selected_delivery)
         if items:
             from app.db_sqlite import db_session_commit
             from app.services.order_details import attach_order_margins
@@ -181,7 +187,8 @@ def orders():
         scheme_options=scheme_options(),
         selected_statuses=selected_statuses,
         selected_schemes=selected_schemes,
-        filters_active=bool(selected_statuses or selected_schemes),
+        selected_delivery=selected_delivery,
+        filters_active=bool(selected_statuses or selected_schemes or selected_delivery),
     )
 
 
