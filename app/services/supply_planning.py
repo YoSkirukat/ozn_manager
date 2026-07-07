@@ -71,16 +71,20 @@ def _warehouse_stock_rows(rows: list[dict], warehouse_name: str) -> list[dict]:
     return items
 
 
-def _catalog_lookup(user_id: int) -> dict[str, Product]:
+def _catalog_lookup(user_id: int) -> tuple[dict[str, Product], set[str]]:
     lookup: dict[str, Product] = {}
+    primary_keys: set[str] = set()
     for product in Product.query.filter_by(user_id=user_id).all():
+        primary_key = _product_key(product.offer_id, product.sku or product.ozon_product_id)
+        if primary_key != "unknown":
+            primary_keys.add(primary_key)
         if product.offer_id:
             lookup[f"offer:{product.offer_id}"] = product
         if product.sku:
             lookup[f"sku:{product.sku}"] = product
         if product.ozon_product_id:
             lookup[f"sku:{product.ozon_product_id}"] = product
-    return lookup
+    return lookup, primary_keys
 
 
 def _resolve_product_meta(
@@ -334,7 +338,8 @@ def build_supply_planning_report(
         | set(outgoing)
         | set(closing_stock)
     )
-    catalog = _catalog_lookup(user.id)
+    catalog, catalog_keys = _catalog_lookup(user.id)
+    all_keys |= catalog_keys
     rows: list[dict] = []
 
     for key in all_keys:
@@ -344,7 +349,7 @@ def build_supply_planning_report(
         opening_qty = closing_qty - incoming_qty + outgoing_qty
         fbo_orders_qty = int(fbo_orders_all.get(key, 0))
         fbo_stock_qty = int(fbo_stock_all.get(key, 0))
-        if not any((
+        if key not in catalog_keys and not any((
             opening_qty,
             incoming_qty,
             outgoing_qty,
