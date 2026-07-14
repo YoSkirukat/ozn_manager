@@ -1131,6 +1131,14 @@ body {
     white-space: nowrap;
 }
 
+.products-stock-col-sum {
+    margin-top: 0.15rem;
+    font-size: 0.75rem;
+    font-weight: 400;
+    color: #9aa3af;
+    line-height: 1.2;
+}
+
 .products-table .products-col-product {
     white-space: normal;
     min-width: 14rem;

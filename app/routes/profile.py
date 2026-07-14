@@ -110,8 +110,16 @@ def check_ozon():
 def save_external():
     purchase_url = (request.form.get("purchase_prices_url") or "").strip()
     fbs_stocks_url = (request.form.get("fbs_stocks_url") or "").strip()
+    fbs_warehouse_raw = (request.form.get("fbs_warehouse_id") or "").strip()
     current_user.purchase_prices_url = purchase_url or None
     current_user.fbs_stocks_url = fbs_stocks_url or None
+    if fbs_warehouse_raw:
+        if not fbs_warehouse_raw.isdigit():
+            flash("warehouse_id склада FBS должен быть числом.", "warning")
+            return redirect(url_for("profile.index"))
+        current_user.fbs_warehouse_id = fbs_warehouse_raw
+    else:
+        current_user.fbs_warehouse_id = None
     db.session.commit()
 
     messages = []
@@ -123,6 +131,10 @@ def save_external():
         messages.append("ссылка «Остатки для FBS» сохранена")
     else:
         messages.append("ссылка «Остатки для FBS» удалена")
+    if fbs_warehouse_raw:
+        messages.append(f"склад FBS {fbs_warehouse_raw} сохранён")
+    else:
+        messages.append("склад FBS сброшен (автовыбор)")
     flash("Внешние данные: " + "; ".join(messages) + ".", "success")
     return redirect(url_for("profile.index"))
 

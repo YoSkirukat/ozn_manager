@@ -131,6 +131,17 @@
                                value="{{ current_user.fbs_stocks_url or '' }}"
                                placeholder="https://...">
                     </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="fbs_warehouse_id">Склад FBS (warehouse_id)</label>
+                        <input class="form-control font-monospace" id="fbs_warehouse_id" name="fbs_warehouse_id"
+                               type="text" inputmode="numeric"
+                               value="{{ current_user.fbs_warehouse_id or '' }}"
+                               placeholder="Необязательно, если склад один">
+                        <div class="form-text">
+                            Нужен только при нескольких FBS-складах. ID склада из Ozon
+                            (метод <code>/v2/warehouse/list</code>).
+                        </div>
+                    </div>
                     <div class="d-flex flex-wrap gap-2 align-items-center">
                         <button class="btn btn-primary" type="submit">Сохранить</button>
                         <button type="button" class="btn btn-outline-primary" id="btn-upload-purchase-prices">

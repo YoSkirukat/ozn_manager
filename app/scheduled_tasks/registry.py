@@ -53,7 +53,7 @@ SCHEDULED_TASKS: tuple[ScheduledTaskDef, ...] = (
     ScheduledTaskDef(
         slug="fbs_stocks_sync",
         title="Обновление остатков FBS",
-        description="Обновление остатков FBS из Excel по ссылке «Остатки для FBS» в профиле.",
+        description="Загрузка остатков FBS из Excel и выгрузка в кабинет Ozon через API.",
         implemented=True,
     ),
     ScheduledTaskDef(

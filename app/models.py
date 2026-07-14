@@ -30,6 +30,7 @@ class User(UserMixin, db.Model):
     ozon_key_active = db.Column(db.Boolean, nullable=True)
     purchase_prices_url = db.Column(db.String(1024), nullable=True)
     fbs_stocks_url = db.Column(db.String(1024), nullable=True)
+    fbs_warehouse_id = db.Column(db.String(64), nullable=True)
     products_in_promotions_count = db.Column(db.Integer, nullable=False, default=0)
     created_at = db.Column(db.DateTime(timezone=True), default=utcnow, nullable=False)
     updated_at = db.Column(
