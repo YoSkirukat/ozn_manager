@@ -108,13 +108,22 @@ def check_ozon():
 @profile_bp.route("/profile/external", methods=["POST"])
 @login_required
 def save_external():
-    url = (request.form.get("purchase_prices_url") or "").strip()
-    current_user.purchase_prices_url = url or None
+    purchase_url = (request.form.get("purchase_prices_url") or "").strip()
+    fbs_stocks_url = (request.form.get("fbs_stocks_url") or "").strip()
+    current_user.purchase_prices_url = purchase_url or None
+    current_user.fbs_stocks_url = fbs_stocks_url or None
     db.session.commit()
-    if url:
-        flash("Ссылка на файл с закупочными ценами сохранена.", "success")
+
+    messages = []
+    if purchase_url:
+        messages.append("ссылка на закупочные цены сохранена")
     else:
-        flash("Ссылка на файл с закупочными ценами удалена.", "info")
+        messages.append("ссылка на закупочные цены удалена")
+    if fbs_stocks_url:
+        messages.append("ссылка «Остатки для FBS» сохранена")
+    else:
+        messages.append("ссылка «Остатки для FBS» удалена")
+    flash("Внешние данные: " + "; ".join(messages) + ".", "success")
     return redirect(url_for("profile.index"))
 
 

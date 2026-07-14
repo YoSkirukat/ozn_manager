@@ -18,6 +18,10 @@ from app.services.change_log import log_change
 from app.services.purchase_prices import apply_purchase_prices
 
 
+def _preserve_external_fbs_stocks(user) -> bool:
+    return bool((getattr(user, "fbs_stocks_url", None) or "").strip())
+
+
 def sync_products_from_ozon(user) -> dict:
     if not user.has_ozon_credentials():
         return {"ok": False, "error": "Подключите Ozon API в профиле."}
@@ -91,6 +95,7 @@ def sync_products_from_ozon(user) -> dict:
     now = utcnow()
     created = 0
     updated = 0
+    preserve_fbs = _preserve_external_fbs_stocks(user)
 
     for item in info_items:
         normalized = normalize_product_item(item)
@@ -134,7 +139,8 @@ def sync_products_from_ozon(user) -> dict:
             product.name = normalized["name"]
             product.price = normalized["price"]
             product.stock_fbo = normalized["stock_fbo"]
-            product.stock_fbs = normalized["stock_fbs"]
+            if not preserve_fbs:
+                product.stock_fbs = normalized["stock_fbs"]
             product.commission_fbo = commissions["fbo_total"]
             product.commission_fbs = commissions["fbs_total"]
             product.commission_details = commissions["details"]

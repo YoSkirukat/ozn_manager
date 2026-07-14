@@ -13,6 +13,7 @@ from app.scheduled_tasks.registry import TASK_BY_SLUG
 from app.services.order_sync import load_orders_from_ozon
 from app.services.product_sync import sync_products_from_ozon
 from app.services.scheduled_task_run_log import prune_task_run_log
+from app.services.fbs_stocks import apply_fbs_stocks
 from app.services.stock_report import load_stock_report, save_stock_report_cache
 from app.services.supply_sync import load_supplies_from_ozon
 from app.services.returns_report import run_returns_check
@@ -65,6 +66,8 @@ def run_scheduled_task(user_id: int, task_slug: str) -> None:
             result = _run_shipments_sync(user)
         elif task_slug == "stock_report":
             result = _run_stock_report(user)
+        elif task_slug == "fbs_stocks_sync":
+            result = _run_fbs_stocks_sync(user)
         elif task_slug == "products_sync":
             result = _run_products_sync(user)
         elif task_slug == "returns_check":
@@ -158,6 +161,18 @@ def _run_stock_report(user: User) -> dict:
             f"Остатки: складов {summary.get('total_warehouses', 0)}, "
             f"SKU {summary.get('total_sku', 0)}, "
             f"единиц {summary.get('total_units', 0)}."
+        )
+    return result
+
+
+def _run_fbs_stocks_sync(user: User) -> dict:
+    result = apply_fbs_stocks(user)
+    if result.get("skipped"):
+        return result
+    if result.get("ok"):
+        result["message"] = (
+            result.get("message")
+            or f"Остатки FBS обновлены: {result.get('updated', 0)}."
         )
     return result
 

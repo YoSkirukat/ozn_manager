@@ -114,14 +114,21 @@
             <div class="card-header">Внешние данные</div>
             <div class="card-body">
                 <p class="text-muted small mb-3">
-                    Укажите ссылку на XLS/XLSX с колонками <strong>Баркод</strong> и <strong>Цена закуп</strong>,
-                    или загрузите файл вручную. Поддерживаются прямые ссылки и таблицы Google Sheets.
+                    Укажите ссылки на XLS/XLSX. Поддерживаются прямые ссылки и таблицы Google Sheets.
+                    Закупочные цены: колонки <strong>Баркод</strong> и <strong>Цена закуп</strong>
+                    (можно загрузить вручную). Остатки FBS: колонки <strong>Баркод</strong> и <strong>Остаток FBS</strong>.
                 </p>
                 <form method="post" action="{{ url_for('profile.save_external') }}">
                     <div class="mb-3">
                         <label class="form-label" for="purchase_prices_url">Файл с закупочными ценами</label>
                         <input class="form-control" id="purchase_prices_url" name="purchase_prices_url" type="url"
                                value="{{ current_user.purchase_prices_url or '' }}"
+                               placeholder="https://...">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="fbs_stocks_url">Остатки для FBS</label>
+                        <input class="form-control" id="fbs_stocks_url" name="fbs_stocks_url" type="url"
+                               value="{{ current_user.fbs_stocks_url or '' }}"
                                placeholder="https://...">
                     </div>
                     <div class="d-flex flex-wrap gap-2 align-items-center">
@@ -142,7 +149,8 @@
             <div class="card-body">
                 <p class="text-muted small mb-3">
                     Автоматическая загрузка данных из Ozon по расписанию. Планировщик встроен в приложение
-                    (без cron). Заказы — за 30 дней, поставки — за 21 день, остатки — актуальный срез по складам FBO,
+                    (без cron). Заказы — за 30 дней, поставки — за 21 день, остатки FBO — срез по складам,
+                    остатки FBS — из файла по ссылке в блоке «Внешние данные»,
                     товары — полная синхронизация каталога и закупочных цен.
                 </p>
                 <div id="scheduled-tasks-scheduler-warn" class="alert alert-warning d-none small py-2 mb-2" role="alert"></div>
