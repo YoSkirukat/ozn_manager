@@ -1,8 +1,6 @@
 /** Загрузка и отображение поставок FBO за период */
 let shipmentsDatePicker = null;
 
-const SHIPMENTS_PERIOD_KEY = "shipmentsPeriod";
-
 function formatApiDate(date) {
     const y = date.getFullYear();
     const m = String(date.getMonth() + 1).padStart(2, "0");
@@ -31,22 +29,6 @@ function getUrlPeriod() {
     return { from: null, to: null };
 }
 
-function getSavedPeriod() {
-    try {
-        const saved = JSON.parse(sessionStorage.getItem(SHIPMENTS_PERIOD_KEY) || "{}");
-        if (saved.from && saved.to) {
-            return { from: saved.from, to: saved.to };
-        }
-    } catch {
-        /* ignore */
-    }
-    return { from: null, to: null };
-}
-
-function saveShipmentsPeriod(from, to) {
-    sessionStorage.setItem(SHIPMENTS_PERIOD_KEY, JSON.stringify({ from, to }));
-}
-
 function shipmentsPageUrl(from, to) {
     return `/shipments?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
 }
@@ -66,9 +48,8 @@ function initShipmentsDatePicker() {
     const urlPeriod = getUrlPeriod();
     const fromAttr = input.dataset.dateFrom;
     const toAttr = input.dataset.dateTo;
-    const saved = getSavedPeriod();
-    const from = fromAttr || urlPeriod.from || saved.from;
-    const to = toAttr || urlPeriod.to || saved.to;
+    const from = fromAttr || urlPeriod.from;
+    const to = toAttr || urlPeriod.to;
 
     const defaultDates = [];
     const d1 = parseIsoDate(from);
@@ -354,7 +335,6 @@ function onShipmentsPageReady() {
             }
             if (typeof showToast === "function") showToast(text, variant);
             if (data.ok && typeof loadPage === "function") {
-                saveShipmentsPeriod(dateFrom, dateTo);
                 loadPage(shipmentsPageUrl(dateFrom, dateTo), true);
             }
         } catch (err) {
@@ -370,28 +350,24 @@ function onShipmentsPageReady() {
     });
 }
 
-function restoreShipmentsPeriodFromStorage() {
+function syncShipmentsUrlFromDefaults() {
     const urlPeriod = getUrlPeriod();
-    if (urlPeriod.from) return false;
+    if (urlPeriod.from) return;
 
-    const saved = getSavedPeriod();
-    if (!saved.from || !saved.to || typeof loadPage !== "function") {
-        return false;
-    }
+    const input = document.getElementById("shipments-date-range");
+    const from = input?.dataset.dateFrom;
+    const to = input?.dataset.dateTo;
+    if (!from || !to) return;
 
-    const url = shipmentsPageUrl(saved.from, saved.to);
-    history.replaceState(null, "", url);
-    loadPage(url, false);
-    return true;
+    history.replaceState(null, "", shipmentsPageUrl(from, to));
 }
 
 document.addEventListener("DOMContentLoaded", () => {
     const path = window.location.pathname.split("?")[0];
     if (path !== "/shipments") return;
 
-    if (!restoreShipmentsPeriodFromStorage()) {
-        initShipmentsPage();
-    }
+    syncShipmentsUrlFromDefaults();
+    initShipmentsPage();
 });
 
 document.addEventListener("page:loaded", (e) => {
@@ -402,9 +378,7 @@ document.addEventListener("page:loaded", (e) => {
     supplyDetailRequestSeq += 1;
     shipmentsTotalsRefreshSeq += 1;
 
-    if (restoreShipmentsPeriodFromStorage()) {
-        return;
-    }
+    syncShipmentsUrlFromDefaults();
 
     const btn = document.getElementById("btn-load-shipments");
     if (btn) btn.dataset.bound = "";

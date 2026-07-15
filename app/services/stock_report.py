@@ -66,16 +66,40 @@ def save_stock_report_cache(user_id: int, rows: list[dict]) -> None:
     )
 
 
-def get_stock_report_cache(user_id: int) -> list[dict] | None:
+def _read_stock_cache_payload(user_id: int) -> dict | None:
     path = _cache_path(user_id)
     if not path.is_file():
         return None
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-        rows = data.get("rows")
-        return rows if isinstance(rows, list) else None
+        return data if isinstance(data, dict) else None
     except (OSError, json.JSONDecodeError, TypeError):
         return None
+
+
+def get_stock_report_cache(user_id: int) -> list[dict] | None:
+    data = _read_stock_cache_payload(user_id)
+    if not data:
+        return None
+    rows = data.get("rows")
+    return rows if isinstance(rows, list) else None
+
+
+def get_stock_report_updated_at(user_id: int) -> datetime | None:
+    """UTC-время последней загрузки остатков из кэша."""
+    data = _read_stock_cache_payload(user_id)
+    if not data:
+        return None
+    raw = data.get("updated_at")
+    if not raw or not isinstance(raw, str):
+        return None
+    try:
+        dt = datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
 
 
 def load_stock_report(user) -> dict:

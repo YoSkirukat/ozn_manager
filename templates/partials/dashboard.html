@@ -4,15 +4,15 @@
             <div class="dashboard-stat-card-body">
                 <svg class="dashboard-stat-card-bg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                      stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <rect x="3" y="3" width="7" height="7" rx="1.5"/>
-                    <rect x="14" y="3" width="7" height="7" rx="1.5"/>
-                    <rect x="3" y="14" width="7" height="7" rx="1.5"/>
-                    <rect x="14" y="14" width="7" height="7" rx="1.5"/>
+                    <path d="M9 14 4 9l5-5"/>
+                    <path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5 5.5 5.5 0 0 1-5.5 5.5H11"/>
                 </svg>
-                <div class="dashboard-stat-card-label dashboard-stat-card-label--spaced">Товары</div>
-                <div class="dashboard-stat-card-value" id="stat-products">—</div>
+                <div class="dashboard-stat-card-label">Возвраты</div>
+                <div class="dashboard-stat-card-period" id="stat-returns-at-pickup-period">В пункте выдачи</div>
+                <div class="dashboard-stat-card-value" id="stat-returns-at-pickup">—</div>
             </div>
-            <a href="/products" data-nav="/products" class="dashboard-stat-card-footer">
+            <a href="/reports/returns" data-nav="/reports/returns" class="dashboard-stat-card-footer"
+               id="stat-returns-at-pickup-link">
                 <span>Подробнее</span>
                 <span class="dashboard-stat-card-footer-icon" aria-hidden="true">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">

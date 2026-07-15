@@ -465,7 +465,7 @@ function initDashboardPage() {
 
 async function loadDashboardStats() {
     const stats = [
-        { key: "products", id: "stat-products" },
+        { key: "returns_at_pickup", id: "stat-returns-at-pickup", periodId: "stat-returns-at-pickup-period" },
         { key: "orders", id: "stat-orders", periodId: "stat-orders-period" },
         { key: "shipments", id: "stat-shipments", periodId: "stat-shipments-period" },
         { key: "products_in_promotions", id: "stat-products-in-promotions" },
@@ -479,11 +479,13 @@ async function loadDashboardStats() {
             if (el) el.textContent = data[key] ?? 0;
             if (periodId) {
                 const periodEl = document.getElementById(periodId);
-                const periodKey = `${key}_period`;
-                if (periodEl) {
-                    const label = data[periodKey];
-                    periodEl.textContent = label || "";
+                if (!periodEl) return;
+                if (key === "returns_at_pickup") {
+                    periodEl.textContent = data.returns_at_pickup_label || "В пункте выдачи";
+                    return;
                 }
+                const label = data[`${key}_period`];
+                periodEl.textContent = label || "";
             }
         });
 

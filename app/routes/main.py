@@ -13,7 +13,12 @@ from app.services.orders_filters import (
     scheme_options,
     status_options,
 )
-from app.services.orders_period import get_orders_period, save_orders_period, save_shipments_period
+from app.services.orders_period import (
+    default_shipments_period,
+    get_orders_period,
+    save_orders_period,
+    save_shipments_period,
+)
 from app.version import get_app_version
 
 
@@ -197,6 +202,8 @@ def orders():
 def shipments():
     date_from = _parse_date_param(request.args.get("from"))
     date_to = _parse_date_param(request.args.get("to"))
+    if not date_from or not date_to:
+        date_from, date_to = default_shipments_period()
 
     items = []
     if date_from and date_to:
@@ -238,23 +245,33 @@ def reports():
 @main_bp.route("/reports/stock")
 @login_required
 def reports_stock():
+    from app.datetime_fmt import format_datetime
     from app.ozon.stocks import compute_stock_summary, group_products, group_warehouses
-    from app.services.stock_report import enrich_product_stock_list, get_stock_report_cache
+    from app.services.stock_report import (
+        enrich_product_stock_list,
+        get_stock_report_cache,
+        get_stock_report_updated_at,
+    )
 
     warehouses = []
     products = []
     stock_summary = None
+    stock_updated_at_label = None
     rows = get_stock_report_cache(current_user.id)
     if rows:
         warehouses = group_warehouses(rows)
         products = enrich_product_stock_list(current_user.id, group_products(rows))
         stock_summary = compute_stock_summary(rows, warehouses)
+    updated_at = get_stock_report_updated_at(current_user.id)
+    if updated_at:
+        stock_updated_at_label = format_datetime(updated_at, "%d.%m.%Y в %H:%M:%S")
 
     return _render_page(
         "/reports/stock",
         warehouses=warehouses,
         products=products,
         stock_summary=stock_summary,
+        stock_updated_at_label=stock_updated_at_label,
         has_ozon=current_user.has_ozon_credentials(),
         has_data=bool(warehouses),
     )

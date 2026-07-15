@@ -4,9 +4,12 @@ from datetime import date, datetime, timedelta
 
 from flask import session
 
+from app.datetime_fmt import local_today
+
 SESSION_ORDERS_PERIOD = "orders_period"
 SESSION_SHIPMENTS_PERIOD = "shipments_period"
-DEFAULT_SHIPMENTS_DAYS = 21
+SHIPMENTS_DEFAULT_DAYS_BEFORE = 7
+SHIPMENTS_DEFAULT_DAYS_AFTER = 14
 
 
 def _parse_date_param(value: str | None) -> date | None:
@@ -49,8 +52,11 @@ def save_shipments_period(date_from: date, date_to: date) -> None:
 
 
 def default_shipments_period() -> tuple[date, date]:
-    today = date.today()
-    return today - timedelta(days=DEFAULT_SHIPMENTS_DAYS - 1), today
+    today = local_today()
+    return (
+        today - timedelta(days=SHIPMENTS_DEFAULT_DAYS_BEFORE),
+        today + timedelta(days=SHIPMENTS_DEFAULT_DAYS_AFTER),
+    )
 
 
 def resolve_orders_period() -> tuple[date, date]:

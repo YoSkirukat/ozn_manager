@@ -24,6 +24,11 @@
                 <p class="text-muted small mb-0">
                     Данные из Ozon: остатки по складам FBO и схемам доставки.
                 </p>
+                {% if stock_updated_at_label %}
+                <p class="text-muted small mb-0 mt-1">
+                    Дата обновления остатков: {{ stock_updated_at_label }}
+                </p>
+                {% endif %}
                 {% if stock_summary %}
                 <div class="stock-summary mt-3">
                     <div class="row g-3 g-md-4">
