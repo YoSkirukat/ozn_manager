@@ -428,9 +428,11 @@ function renderWarehouseWatchList() {
         const key = watch.watch_key || `${watch.macrolocal_cluster_id}:${watch.storage_warehouse_id}`;
         const stateLabel = watch.last_availability_state === "FULL_AVAILABLE"
             ? "Доступен"
-            : watch.last_availability_state === "NOT_AVAILABLE"
-                ? "Недоступен"
-                : "—";
+            : watch.last_availability_state === "PARTIAL_AVAILABLE"
+                ? "Частично доступен"
+                : watch.last_availability_state === "NOT_AVAILABLE"
+                    ? "Недоступен"
+                    : "—";
         return `
             <div class="warehouse-slots-watch-item" data-watch-key="${escapeHtml(key)}">
                 <div class="warehouse-slots-watch-item-main">

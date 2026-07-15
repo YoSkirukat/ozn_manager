@@ -21,7 +21,19 @@ def check_notifications_for_user(user: User) -> None:
     if not user.is_active:
         return
 
+    from app.services.warehouse_slot_monitor import (
+        check_warehouse_slot_watches,
+        user_has_warehouse_slot_watches,
+    )
+
+    has_watches = user_has_warehouse_slot_watches(user.id)
     enabled = get_enabled_notification_slugs(user.id)
+
+    # Мониторинг складов — до тяжёлых sync (заказы/поставки), иначе статус
+    # может не обновляться часами при загруженном планировщике.
+    if "warehouse_slot_available" in enabled or has_watches:
+        check_warehouse_slot_watches(user)
+
     if not enabled:
         return
 
@@ -33,14 +45,6 @@ def check_notifications_for_user(user: User) -> None:
 
     if "new_return" in enabled or "return_status_changed" in enabled:
         _check_returns(user)
-
-    from app.services.warehouse_slot_monitor import (
-        check_warehouse_slot_watches,
-        user_has_warehouse_slot_watches,
-    )
-
-    if "warehouse_slot_available" in enabled or user_has_warehouse_slot_watches(user.id):
-        check_warehouse_slot_watches(user)
 
 
 def _check_new_orders(user: User) -> None:

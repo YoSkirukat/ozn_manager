@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_EXECUTED
+from apscheduler.executors.pool import ThreadPoolExecutor
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
@@ -392,9 +393,15 @@ def _start_scheduler(app) -> None:
     global _scheduler
 
     tz = app.config.get("SCHEDULER_TIMEZONE", "Europe/Moscow")
+    # default — регламентные задания; notifications — отдельный пул,
+    # чтобы долгие sync-ы не блокировали мониторинг складов.
     scheduler = BackgroundScheduler(
         timezone=tz,
-        executors={"default": {"type": "threadpool", "max_workers": 1}},
+        executors={
+            "default": ThreadPoolExecutor(max_workers=3),
+            "notifications": ThreadPoolExecutor(max_workers=1),
+        },
+        job_defaults={"coalesce": True, "max_instances": 1},
     )
     scheduler.add_listener(_on_scheduler_event, EVENT_JOB_ERROR | EVENT_JOB_EXECUTED)
     scheduler.start()
@@ -426,6 +433,7 @@ def _start_scheduler(app) -> None:
         replace_existing=True,
         max_instances=1,
         coalesce=True,
+        executor="notifications",
     )
 
     _touch_heartbeat(app.instance_path)

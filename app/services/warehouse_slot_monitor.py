@@ -20,6 +20,14 @@ logger = logging.getLogger(__name__)
 
 MONITOR_CLUSTER_DEBOUNCE_SEC = 300
 STATE_FULL_AVAILABLE = "FULL_AVAILABLE"
+KNOWN_STATES = frozenset(
+    {
+        "FULL_AVAILABLE",
+        "PARTIAL_AVAILABLE",
+        "NOT_AVAILABLE",
+        "UNSPECIFIED",
+    }
+)
 
 
 def list_warehouse_slot_watches(user_id: int) -> list[dict]:
@@ -40,12 +48,20 @@ def user_has_warehouse_slot_watches(user_id: int) -> bool:
     )
 
 
+def _normalize_availability_state(value) -> str | None:
+    text = str(value or "").strip()
+    if text in KNOWN_STATES:
+        return text
+    return None
+
+
 def add_warehouse_slot_watch(user, payload: dict) -> dict:
     macrolocal_cluster_id = payload.get("macrolocal_cluster_id")
     cluster_id = payload.get("cluster_id")
     storage_warehouse_id = payload.get("storage_warehouse_id")
     warehouse_name = str(payload.get("warehouse_name") or "—").strip() or "—"
     cluster_name = str(payload.get("cluster_name") or "—").strip() or "—"
+    availability_state = _normalize_availability_state(payload.get("availability_state"))
 
     try:
         macrolocal_cluster_id = int(macrolocal_cluster_id)
@@ -66,7 +82,10 @@ def add_warehouse_slot_watch(user, payload: dict) -> dict:
         watch.warehouse_name = warehouse_name
         watch.cluster_name = cluster_name
         watch.cluster_id = cluster_id
-        watch.last_availability_state = None
+        # Не сбрасываем уже известный статус при повторном включении:
+        # уведомление нужно на переход "недоступен → доступен".
+        if watch.last_availability_state is None and availability_state:
+            watch.last_availability_state = availability_state
         db_session_commit()
         return {"ok": True, "watch": watch.to_dict(), "created": False}
 
@@ -77,7 +96,7 @@ def add_warehouse_slot_watch(user, payload: dict) -> dict:
         storage_warehouse_id=storage_warehouse_id,
         warehouse_name=warehouse_name,
         cluster_name=cluster_name,
-        last_availability_state=None,
+        last_availability_state=availability_state,
     )
     db.session.add(watch)
     db_session_commit()
@@ -125,6 +144,24 @@ def _warehouse_state_map(warehouses: list[dict]) -> dict[tuple[int, int], dict]:
     return mapping
 
 
+def _find_watch_row(
+    state_map: dict[tuple[int, int], dict],
+    warehouses: list[dict],
+    watch: WarehouseSlotWatch,
+) -> dict | None:
+    macrolocal_cluster_id = int(watch.macrolocal_cluster_id)
+    storage_warehouse_id = int(watch.storage_warehouse_id)
+    row = state_map.get((macrolocal_cluster_id, storage_warehouse_id))
+    if row:
+        return row
+
+    # Fallback: тот же warehouse_id в ответе кластера (macrolocal мог смениться/обнулиться).
+    for candidate in warehouses:
+        if int(candidate.get("storage_warehouse_id") or 0) == storage_warehouse_id:
+            return candidate
+    return None
+
+
 def check_warehouse_slot_watches(user) -> None:
     if not user.has_ozon_credentials():
         return
@@ -148,21 +185,31 @@ def check_warehouse_slot_watches(user) -> None:
             cluster_id=cluster_id or None,
             force=True,
         )
-        _touch_monitor_debounce(user.id, macrolocal_cluster_id)
 
         if not result.get("ok"):
-            logger.debug(
+            logger.warning(
                 "Warehouse slot monitor failed for user %s cluster %s: %s",
                 user.id,
                 macrolocal_cluster_id,
                 result.get("error"),
             )
+            # Не трогаем debounce при ошибке — следующая минута повторит попытку.
             continue
 
-        state_map = _warehouse_state_map(result.get("warehouses") or [])
+        _touch_monitor_debounce(user.id, macrolocal_cluster_id)
+
+        warehouses = result.get("warehouses") or []
+        state_map = _warehouse_state_map(warehouses)
         for watch in cluster_watches:
-            row = state_map.get((macrolocal_cluster_id, int(watch.storage_warehouse_id)))
+            row = _find_watch_row(state_map, warehouses, watch)
             if not row:
+                logger.warning(
+                    "Warehouse watch not found in refresh: user=%s watch=%s warehouse=%s cluster=%s",
+                    user.id,
+                    watch.id,
+                    watch.storage_warehouse_id,
+                    macrolocal_cluster_id,
+                )
                 continue
 
             new_state = str(row.get("availability_state") or "")
@@ -176,6 +223,8 @@ def check_warehouse_slot_watches(user) -> None:
                 watch.last_availability_state = new_state
                 watch.warehouse_name = str(row.get("name") or watch.warehouse_name)
                 watch.cluster_name = str(row.get("cluster_name") or watch.cluster_name)
+                if row.get("cluster_id"):
+                    watch.cluster_id = int(row["cluster_id"])
 
     try:
         db_session_commit()
