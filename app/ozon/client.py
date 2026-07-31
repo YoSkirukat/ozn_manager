@@ -1,10 +1,29 @@
 """Клиент Ozon Seller API."""
 
+from __future__ import annotations
+
+import logging
+import random
+import threading
+import time
+
 import requests
 
 OZON_API_BASE = "https://api-seller.ozon.ru"
 PRODUCT_LIST_LIMIT = 1000
 INFO_BATCH_SIZE = 100
+
+# Лимит Ozon «per second»: сериализуем запросы по client_id и повторяем при 429.
+API_MAX_RETRIES = 8
+MIN_REQUEST_INTERVAL_SEC = 0.55
+RATE_LIMIT_MESSAGE = (
+    "Превышен лимит запросов к Ozon. Подождите 30–60 секунд и попробуйте снова."
+)
+
+logger = logging.getLogger(__name__)
+
+_throttle_lock = threading.Lock()
+_last_request_monotonic: dict[str, float] = {}
 
 
 def _headers(client_id: str, api_key: str) -> dict:
@@ -15,17 +34,69 @@ def _headers(client_id: str, api_key: str) -> dict:
     }
 
 
-def _request(client_id: str, api_key: str, method: str, path: str, payload: dict | None = None) -> dict:
-    resp = requests.request(
-        method,
-        f"{OZON_API_BASE}{path}",
-        headers=_headers(client_id, api_key),
-        json=payload,
-        timeout=60,
-    )
-    if resp.status_code != 200:
-        raise RuntimeError(f"Ozon API {path}: HTTP {resp.status_code} — {resp.text[:300]}")
-    return resp.json()
+def _throttle(client_id: str) -> None:
+    """Минимальный интервал между запросами одного продавца (все эндпоинты)."""
+    key = client_id or "_"
+    with _throttle_lock:
+        now = time.monotonic()
+        last = _last_request_monotonic.get(key, 0.0)
+        wait = MIN_REQUEST_INTERVAL_SEC - (now - last)
+        if wait > 0:
+            time.sleep(wait)
+        _last_request_monotonic[key] = time.monotonic()
+
+
+def _retry_delay(attempt: int) -> float:
+    return min(32.0, 2.0 * (2**attempt) + random.uniform(0.0, 1.5))
+
+
+def _request(
+    client_id: str,
+    api_key: str,
+    method: str,
+    path: str,
+    payload: dict | None = None,
+) -> dict:
+    last_error: Exception | None = None
+    for attempt in range(API_MAX_RETRIES):
+        _throttle(client_id)
+        try:
+            resp = requests.request(
+                method,
+                f"{OZON_API_BASE}{path}",
+                headers=_headers(client_id, api_key),
+                json=payload,
+                timeout=60,
+            )
+        except requests.RequestException as exc:
+            raise RuntimeError(f"Ozon API {path}: сеть — {exc}") from exc
+
+        if resp.status_code == 429:
+            last_error = RuntimeError(
+                f"Ozon API {path}: HTTP 429 — {resp.text[:300]}"
+            )
+            if attempt >= API_MAX_RETRIES - 1:
+                raise RuntimeError(RATE_LIMIT_MESSAGE) from last_error
+            delay = _retry_delay(attempt)
+            logger.warning(
+                "Ozon rate limit on %s (attempt %s/%s), sleep %.1fs",
+                path,
+                attempt + 1,
+                API_MAX_RETRIES,
+                delay,
+            )
+            time.sleep(delay)
+            continue
+
+        if resp.status_code != 200:
+            raise RuntimeError(
+                f"Ozon API {path}: HTTP {resp.status_code} — {resp.text[:300]}"
+            )
+        return resp.json()
+
+    if last_error is not None:
+        raise RuntimeError(RATE_LIMIT_MESSAGE) from last_error
+    raise RuntimeError(f"Ozon API {path}: не удалось выполнить запрос.")
 
 
 def _post(client_id: str, api_key: str, path: str, payload: dict) -> dict:

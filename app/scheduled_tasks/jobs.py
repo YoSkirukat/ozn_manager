@@ -89,15 +89,31 @@ def run_scheduled_task(user_id: int, task_slug: str) -> None:
             run.message = result.get("error") or "Ошибка выполнения."
         run.details = {k: v for k, v in result.items() if k not in ("ok", "message", "error")}
         db_session_commit()
-        prune_task_run_log(user_id, task_slug)
     except Exception as exc:
         logger.exception("Scheduled task %s failed for user %s", task_slug, user_id)
         db.session.rollback()
         run.finished_at = utcnow()
         run.status = ScheduledTaskRun.STATUS_ERROR
         run.message = str(exc)
-        db_session_commit()
+        try:
+            db_session_commit()
+        except Exception:
+            logger.exception(
+                "Could not persist error status for %s user %s",
+                task_slug,
+                user_id,
+            )
+            db.session.rollback()
+
+    try:
         prune_task_run_log(user_id, task_slug)
+    except Exception:
+        logger.warning(
+            "prune_task_run_log failed after %s for user %s",
+            task_slug,
+            user_id,
+            exc_info=True,
+        )
 
 
 def _run_orders_sync(user: User) -> dict:

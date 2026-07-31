@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import random
-import threading
 import time
 from datetime import date, timedelta
 
@@ -11,8 +9,6 @@ from app.ozon.client import _post
 
 SUPPLY_TYPE_DIRECT = 2
 DELETION_SKU_MODE_DEFAULT = 1
-API_MAX_RETRIES = 8
-MIN_REQUEST_INTERVAL_SEC = 1.25
 DRAFT_INFO_INITIAL_DELAY_SEC = 3.0
 DRAFT_INFO_POLL_DELAY_SEC = 4.0
 DRAFT_INFO_MAX_ATTEMPTS = 10
@@ -23,13 +19,10 @@ UNAVAILABLE_WAREHOUSE_SLOTS_MESSAGE = (
     "Таймслоты для этого склада недоступны. Выберите склад со статусом «Доступен»."
 )
 
-_throttle_lock = threading.Lock()
-_last_request_monotonic: dict[str, float] = {}
-
 
 def friendly_ozon_error(exc: Exception) -> str:
     text = str(exc)
-    if "HTTP 429" in text:
+    if "HTTP 429" in text or RATE_LIMIT_MESSAGE in text:
         return RATE_LIMIT_MESSAGE
     if "HTTP 404" in text and (
         "warehouse scoring result" in text
@@ -41,34 +34,12 @@ def friendly_ozon_error(exc: Exception) -> str:
     return text
 
 
-def _throttle(client_id: str, path: str) -> None:
-    key = f"{client_id}:{path}"
-    with _throttle_lock:
-        now = time.monotonic()
-        last = _last_request_monotonic.get(key, 0.0)
-        wait = MIN_REQUEST_INTERVAL_SEC - (now - last)
-        if wait > 0:
-            time.sleep(wait)
-        _last_request_monotonic[key] = time.monotonic()
-
-
 def _post_retry(client_id: str, api_key: str, path: str, payload: dict) -> dict:
-    last_error: Exception | None = None
-    for attempt in range(API_MAX_RETRIES):
-        _throttle(client_id, path)
-        try:
-            return _post(client_id, api_key, path, payload)
-        except RuntimeError as exc:
-            last_error = exc
-            if "HTTP 429" not in str(exc):
-                raise
-            if attempt >= API_MAX_RETRIES - 1:
-                raise RuntimeError(RATE_LIMIT_MESSAGE) from exc
-            delay = min(32.0, 3.0 * (2 ** attempt) + random.uniform(0.0, 1.5))
-            time.sleep(delay)
-    if last_error:
-        raise RuntimeError(friendly_ozon_error(last_error))
-    raise RuntimeError("Не удалось выполнить запрос к Ozon API.")
+    """Обёртка над клиентом: throttle/retry уже в _post, здесь — дружелюбные ошибки."""
+    try:
+        return _post(client_id, api_key, path, payload)
+    except RuntimeError as exc:
+        raise RuntimeError(friendly_ozon_error(exc)) from exc
 
 
 def fetch_cluster_list(client_id: str, api_key: str) -> list[dict]:
