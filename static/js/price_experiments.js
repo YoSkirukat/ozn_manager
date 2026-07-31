@@ -11,6 +11,52 @@ let peSearchTimer = null;
 /** @type {Map<number, {id:number, name:string, offer_id:string, barcode:string}>} */
 let peSelectedProducts = new Map();
 
+const PE_OPEN_HISTORY_KEY = "pe_open_history_ids";
+
+function peCollectOpenHistoryIds() {
+    return [...document.querySelectorAll(".pe-history-row:not(.d-none)")]
+        .map((row) => row.dataset.historyFor)
+        .filter(Boolean);
+}
+
+function peRememberOpenHistories(extraItemId = null) {
+    const ids = new Set(peCollectOpenHistoryIds());
+    if (extraItemId) ids.add(String(extraItemId));
+    try {
+        sessionStorage.setItem(PE_OPEN_HISTORY_KEY, JSON.stringify([...ids]));
+    } catch (_) {
+        /* ignore quota / private mode */
+    }
+}
+
+function peRestoreOpenHistories() {
+    let raw = null;
+    try {
+        raw = sessionStorage.getItem(PE_OPEN_HISTORY_KEY);
+        sessionStorage.removeItem(PE_OPEN_HISTORY_KEY);
+    } catch (_) {
+        return;
+    }
+    if (!raw) return;
+    let ids = [];
+    try {
+        ids = JSON.parse(raw);
+    } catch (_) {
+        return;
+    }
+    if (!Array.isArray(ids) || !ids.length) return;
+
+    ids.forEach((itemId) => {
+        const row = document.querySelector(`.pe-history-row[data-history-for="${itemId}"]`);
+        const btn = document.querySelector(`.pe-toggle-history[data-item-id="${itemId}"]`);
+        if (!row || !btn) return;
+        row.classList.remove("d-none");
+        btn.classList.add("is-open");
+        btn.setAttribute("aria-expanded", "true");
+        peBindSalePriceInputs(row);
+    });
+}
+
 function peEscapeHtml(text) {
     return String(text ?? "")
         .replace(/&/g, "&amp;")
@@ -311,6 +357,7 @@ async function peSaveSalePrice(input, { lowerMinPrice = false } = {}) {
             showToast(data.message || "Цена обновлена", data.warning ? "warning" : "success");
         }
         if (experimentId) {
+            peRememberOpenHistories(itemId);
             peReload(`/analytics/price-experiments?id=${experimentId}`);
         }
     } catch (err) {
@@ -435,6 +482,7 @@ function peBindDetailActions() {
     });
 
     peBindSalePriceInputs(document.getElementById("price-experiments-page"));
+    peRestoreOpenHistories();
 
     document.querySelectorAll(".pe-remove-item").forEach((btn) => {
         if (btn.dataset.bound === "1") return;
