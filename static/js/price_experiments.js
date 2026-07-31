@@ -229,6 +229,81 @@ function peRenderSearchResults(products) {
     });
 }
 
+function peNormalizePriceInput(value) {
+    return String(value || "")
+        .trim()
+        .replace(/\s+/g, "")
+        .replace(",", ".");
+}
+
+async function peSaveSalePrice(input) {
+    const itemId = input.dataset.itemId;
+    if (!itemId || input.dataset.saving === "1") return;
+
+    const newValue = peNormalizePriceInput(input.value);
+    const oldValue = input.dataset.savedValue ?? "";
+    if (newValue === oldValue) return;
+
+    const experimentId = peCurrentExperimentId();
+    input.dataset.saving = "1";
+    input.classList.add("is-saving");
+    input.classList.remove("is-error");
+
+    try {
+        const data = await peApi(`/api/analytics/price-experiments/items/${itemId}/price`, {
+            method: "PATCH",
+            body: JSON.stringify({ price: newValue }),
+        });
+        if (data.unchanged) {
+            input.value = data.price_display || input.value;
+            input.dataset.savedValue = peNormalizePriceInput(data.price_display || input.value);
+            return;
+        }
+        if (typeof showToast === "function") {
+            showToast(data.message || "Цена обновлена", data.warning ? "warning" : "success");
+        }
+        if (experimentId) {
+            peReload(`/analytics/price-experiments?id=${experimentId}`);
+        }
+    } catch (err) {
+        input.classList.add("is-error");
+        input.value = input.dataset.savedValue || "";
+        peShowMessage(err.message);
+        if (typeof showToast === "function") showToast(err.message, "danger");
+    } finally {
+        input.dataset.saving = "0";
+        input.classList.remove("is-saving");
+    }
+}
+
+function peBindSalePriceInputs(root) {
+    const scope = root || document;
+    scope.querySelectorAll(".pe-sale-price-input").forEach((input) => {
+        if (input.dataset.bound === "1") return;
+        input.dataset.bound = "1";
+        input.dataset.savedValue = peNormalizePriceInput(input.value);
+
+        input.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") {
+                e.preventDefault();
+                input.blur();
+            } else if (e.key === "Escape") {
+                input.value = input.dataset.savedValue || "";
+                input.classList.remove("is-error");
+                input.blur();
+            }
+        });
+
+        input.addEventListener("blur", () => {
+            peSaveSalePrice(input);
+        });
+
+        input.addEventListener("click", (e) => {
+            e.stopPropagation();
+        });
+    });
+}
+
 function peBindDetailActions() {
     const experimentId = peCurrentExperimentId();
     if (!experimentId) return;
@@ -307,8 +382,11 @@ function peBindDetailActions() {
             const open = row.classList.toggle("d-none") === false;
             btn.classList.toggle("is-open", open);
             btn.setAttribute("aria-expanded", open ? "true" : "false");
+            if (open) peBindSalePriceInputs(row);
         });
     });
+
+    peBindSalePriceInputs(document.getElementById("price-experiments-page"));
 
     document.querySelectorAll(".pe-remove-item").forEach((btn) => {
         if (btn.dataset.bound === "1") return;
@@ -503,7 +581,7 @@ document.addEventListener("page:loaded", (e) => {
         if (el) el.dataset.bound = "";
     });
     document.querySelectorAll(
-        ".pe-delete-experiment, .pe-toggle-history, .pe-remove-item, .pe-edit-comment"
+        ".pe-delete-experiment, .pe-toggle-history, .pe-remove-item, .pe-edit-comment, .pe-sale-price-input"
     ).forEach((el) => {
         el.dataset.bound = "";
     });

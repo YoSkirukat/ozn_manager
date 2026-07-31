@@ -201,6 +201,19 @@ def _experiment_to_dict(experiment: PriceExperiment, *, with_items: bool = False
     return data
 
 
+def is_snapshot_task_enabled(user_id: int) -> bool:
+    """Включено ли регламентное задание ежедневных срезов."""
+    from app.models import ScheduledTaskSetting
+    from app.services.scheduled_tasks_service import ensure_user_task_settings
+
+    ensure_user_task_settings(user_id)
+    setting = ScheduledTaskSetting.query.filter_by(
+        user_id=user_id,
+        task_slug="price_experiments_snapshot",
+    ).first()
+    return bool(setting and setting.enabled)
+
+
 def list_experiments(user_id: int) -> list[dict]:
     rows = (
         PriceExperiment.query.filter_by(user_id=user_id)
@@ -506,6 +519,102 @@ def remove_item(user_id: int, item_id: int) -> dict:
         experiment.updated_at = utcnow()
     db_session_commit()
     return {"ok": True}
+
+
+def update_item_sale_price(user, item_id: int, new_price) -> dict:
+    """Меняет «Вашу цену» товара через Ozon API и обновляет сегодняшний срез."""
+    from decimal import Decimal
+
+    from app.ozon.product_prices import update_product_prices
+    from app.services.purchase_prices import _parse_price
+
+    item = (
+        PriceExperimentItem.query.join(PriceExperiment)
+        .filter(
+            PriceExperimentItem.id == item_id,
+            PriceExperiment.user_id == user.id,
+        )
+        .first()
+    )
+    if not item:
+        return {"ok": False, "error": "Товар эксперимента не найден."}
+
+    product = item.product
+    if not product:
+        return {"ok": False, "error": "Товар не найден."}
+    if not user.has_ozon_credentials():
+        return {"ok": False, "error": "Подключите Ozon API в профиле."}
+
+    price = _parse_price(new_price)
+    if price is None or price <= 0:
+        return {"ok": False, "error": "Укажите корректную цену больше нуля."}
+
+    price = price.quantize(Decimal("0.01"))
+    current = _to_float(product.price)
+    if current is not None and abs(float(price) - current) < 0.0001:
+        return {
+            "ok": True,
+            "unchanged": True,
+            "price": float(price),
+            "price_display": format_money_ru(price),
+            "message": "Цена не изменилась.",
+        }
+
+    raw = product.raw_data if isinstance(product.raw_data, dict) else {}
+    payload_item: dict = {
+        "product_id": int(product.ozon_product_id),
+        "price": f"{price:.2f}",
+        "currency_code": "RUB",
+        "auto_action_enabled": "UNKNOWN",
+    }
+    old_price = _money_or_none(raw.get("old_price"))
+    if old_price is not None and old_price > 0:
+        payload_item["old_price"] = f"{old_price:.2f}"
+    min_price = _money_or_none(raw.get("min_price"))
+    if min_price is not None and min_price > 0:
+        payload_item["min_price"] = f"{min_price:.2f}"
+
+    try:
+        api_result = update_product_prices(
+            user.ozon_client_id,
+            user.ozon_api_key,
+            [payload_item],
+        )
+    except Exception as exc:
+        logger.exception("price experiments: update price failed")
+        return {"ok": False, "error": str(exc)}
+
+    if not api_result.get("ok"):
+        return {"ok": False, "error": api_result.get("error") or "Ozon не принял цену."}
+
+    product.price = price
+    if isinstance(product.raw_data, dict):
+        updated_raw = dict(product.raw_data)
+    else:
+        updated_raw = {}
+    updated_raw["price"] = f"{price:.2f}"
+    product.raw_data = updated_raw
+
+    prices_map = _fetch_prices_api_map(user, [str(product.ozon_product_id)])
+    _upsert_snapshot(
+        item,
+        snapshot_date=local_today(),
+        source=PriceExperimentSnapshot.SOURCE_MANUAL,
+        prices_api_item=prices_map.get(str(product.ozon_product_id)),
+    )
+    item.experiment.updated_at = utcnow()
+    db_session_commit()
+
+    result = {
+        "ok": True,
+        "price": float(price),
+        "price_display": format_money_ru(price),
+        "message": "Цена обновлена в Ozon.",
+        "item": _item_to_dict(item, include_history=True),
+    }
+    if api_result.get("warning"):
+        result["warning"] = api_result["warning"]
+    return result
 
 
 def take_daily_snapshots(user, experiment_id: int | None = None) -> dict:

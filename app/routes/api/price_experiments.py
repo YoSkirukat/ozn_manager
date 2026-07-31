@@ -13,6 +13,7 @@ from app.services.price_experiments import (
     take_daily_snapshots,
     update_experiment,
     update_item_comment,
+    update_item_sale_price,
 )
 
 price_experiments_api_bp = Blueprint("price_experiments_api", __name__)
@@ -124,6 +125,18 @@ def experiments_update_item(item_id: int):
     payload = request.get_json(silent=True) or {}
     result = update_item_comment(current_user.id, item_id, str(payload.get("comment") or ""))
     status = 200 if result.get("ok") else 404
+    return jsonify(result), status
+
+
+@price_experiments_api_bp.route(
+    "/analytics/price-experiments/items/<int:item_id>/price",
+    methods=["PATCH"],
+)
+@login_required
+def experiments_update_item_price(item_id: int):
+    payload = request.get_json(silent=True) or {}
+    result = update_item_sale_price(current_user, item_id, payload.get("price"))
+    status = 200 if result.get("ok") else 400
     return jsonify(result), status
 
 

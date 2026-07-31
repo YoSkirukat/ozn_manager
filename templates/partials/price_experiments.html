@@ -57,6 +57,15 @@
 
     <div id="price-experiments-message"></div>
 
+    {% if show_snapshot_task_warning %}
+    <div class="alert alert-warning py-2" role="alert">
+        Для автоматического ежедневного съёма данных включите в
+        <a href="{{ url_for('profile.index') }}#scheduled-tasks-card">профиле</a>
+        регламентное задание <strong>«Срезы экспериментов с ценами»</strong>
+        (рекомендуется «Один раз в день»).
+    </div>
+    {% endif %}
+
     {% if not current_experiment %}
     <div class="card shadow-sm mb-4">
         <div class="card-body">
@@ -208,6 +217,7 @@
                                 </thead>
                                 <tbody>
                                     {% for snap in item.snapshots %}
+                                    {% set is_latest_snap = loop.first %}
                                     <tr>
                                         <td class="text-center text-nowrap">{{ snap.snapshot_date_display }}</td>
                                         <td class="text-center text-nowrap">
@@ -236,12 +246,29 @@
                                         </td>
                                         {% for price in snap.prices_list %}
                                         <td class="text-center text-nowrap">
+                                            {% if is_latest_snap and price.key == 'price' %}
+                                            <span class="pe-value-with-change pe-price-edit-wrap">
+                                                <input type="text"
+                                                       class="form-control form-control-sm pe-sale-price-input text-center"
+                                                       data-item-id="{{ item.id }}"
+                                                       value="{{ price.display if price.value is not none else '' }}"
+                                                       placeholder="—"
+                                                       inputmode="decimal"
+                                                       autocomplete="off"
+                                                       title="Изменить цену в Ozon"
+                                                       aria-label="Ваша цена">
+                                                {% if price.change == 'up' %}<span class="pe-change pe-change--up" title="Рост" aria-label="Рост">▲</span>
+                                                {% elif price.change == 'down' %}<span class="pe-change pe-change--down" title="Снижение" aria-label="Снижение">▼</span>
+                                                {% endif %}
+                                            </span>
+                                            {% else %}
                                             <span class="pe-value-with-change">
                                                 {{ price.display }}
                                                 {% if price.change == 'up' %}<span class="pe-change pe-change--up" title="Рост" aria-label="Рост">▲</span>
                                                 {% elif price.change == 'down' %}<span class="pe-change pe-change--down" title="Снижение" aria-label="Снижение">▼</span>
                                                 {% endif %}
                                             </span>
+                                            {% endif %}
                                         </td>
                                         {% endfor %}
                                         <td class="text-muted">

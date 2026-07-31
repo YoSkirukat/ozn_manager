@@ -437,7 +437,11 @@ def analytics_warehouse_slots():
 @main_bp.route("/analytics/price-experiments")
 @login_required
 def analytics_price_experiments():
-    from app.services.price_experiments import get_experiment, list_experiments
+    from app.services.price_experiments import (
+        get_experiment,
+        is_snapshot_task_enabled,
+        list_experiments,
+    )
 
     experiment_id = request.args.get("id")
     experiments = list_experiments(current_user.id)
@@ -448,11 +452,15 @@ def analytics_price_experiments():
         except (TypeError, ValueError):
             current_experiment = None
 
+    snapshot_task_enabled = is_snapshot_task_enabled(current_user.id)
+    show_snapshot_task_warning = bool(experiments) and not snapshot_task_enabled
+
     return _render_page(
         "/analytics/price-experiments",
         experiments=experiments,
         current_experiment=current_experiment,
         has_ozon=current_user.has_ozon_credentials(),
+        show_snapshot_task_warning=show_snapshot_task_warning,
     )
 
 
