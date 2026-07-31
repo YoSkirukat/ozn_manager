@@ -8,7 +8,6 @@ import re
 import requests
 
 from app.db_sqlite import db_session_commit
-from app.extensions import db
 from app.models import Product
 from app.ozon.fbs_stocks import resolve_fbs_warehouse_id, update_fbs_stocks
 from app.services.purchase_prices import normalize_barcode, normalize_sheet_url
@@ -145,10 +144,10 @@ def _preferred_warehouse_id(user) -> int | None:
 
 
 def _build_ozon_items(user, stock_map: dict[str, int]) -> tuple[list[dict], int]:
-    """Собирает позиции для API Ozon; обновляет локальные stock_fbs."""
+    """Позиции с изменившимся остатком + число совпадений по баркоду."""
     products = Product.query.filter_by(user_id=user.id).all()
     items: list[dict] = []
-    local_updated = 0
+    matched = 0
 
     for product in products:
         barcode = normalize_barcode(product.barcode)
@@ -157,12 +156,15 @@ def _build_ozon_items(user, stock_map: dict[str, int]) -> tuple[list[dict], int]
         stock = stock_map.get(barcode)
         if stock is None:
             continue
+        matched += 1
 
-        if product.stock_fbs != stock:
-            product.stock_fbs = stock
-            local_updated += 1
+        if int(product.stock_fbs or 0) == stock:
+            continue
 
-        entry: dict = {"stock": stock}
+        entry: dict = {
+            "stock": stock,
+            "product": product,
+        }
         if product.ozon_product_id:
             entry["product_id"] = product.ozon_product_id
         if product.offer_id:
@@ -171,24 +173,63 @@ def _build_ozon_items(user, stock_map: dict[str, int]) -> tuple[list[dict], int]
             continue
         items.append(entry)
 
-    return items, local_updated
+    return items, matched
+
+
+def _apply_local_stock_updates(updated_items: list[dict]) -> int:
+    local_updated = 0
+    for item in updated_items:
+        product = item.get("product")
+        if product is None:
+            continue
+        stock = int(item["stock"])
+        if int(product.stock_fbs or 0) != stock:
+            local_updated += 1
+        product.stock_fbs = stock
+    return local_updated
+
+
+def _item_lookup_key(item: dict) -> str:
+    if item.get("offer_id") not in (None, ""):
+        return f"offer:{item['offer_id']}"
+    if item.get("product_id") not in (None, ""):
+        return f"product:{item['product_id']}"
+    return ""
+
+
+def _index_items_by_keys(items: list[dict]) -> dict[str, dict]:
+    by_key: dict[str, dict] = {}
+    for item in items:
+        if item.get("offer_id") not in (None, ""):
+            by_key[f"offer:{item['offer_id']}"] = item
+        product_id = item.get("product_id")
+        if product_id not in (None, ""):
+            by_key[f"product:{product_id}"] = item
+            try:
+                by_key[f"product:{int(product_id)}"] = item
+            except (TypeError, ValueError):
+                pass
+    return by_key
 
 
 def _apply_stock_map(user, stock_map: dict[str, int], *, push_to_ozon: bool = True) -> dict:
-    items, local_updated = _build_ozon_items(user, stock_map)
-    db.session.flush()
+    items, matched_in_file = _build_ozon_items(user, stock_map)
 
     result = {
         "ok": True,
         "skipped": False,
-        "updated": local_updated,
+        "updated": 0,
         "total_in_file": len(stock_map),
-        "matched": len(items),
+        "matched": matched_in_file,
+        "changed": len(items),
         "ozon_updated": 0,
         "ozon_failed": 0,
+        "ozon_deferred": 0,
     }
 
     if not push_to_ozon:
+        local_updated = _apply_local_stock_updates(items)
+        result["updated"] = local_updated
         result["message"] = (
             f"Остатки FBS в приложении: обновлено {local_updated} "
             f"из {len(stock_map)} в файле."
@@ -198,17 +239,28 @@ def _apply_stock_map(user, stock_map: dict[str, int], *, push_to_ozon: bool = Tr
     if not user.has_ozon_credentials():
         result["ok"] = False
         result["error"] = "Подключите Ozon API в профиле, чтобы выгрузить остатки в кабинет."
-        result["message"] = (
-            f"Локально обновлено {local_updated}, в Ozon не отправлено: нет ключей API."
-        )
+        result["message"] = "В Ozon не отправлено: нет ключей API."
         return result
 
-    if not items:
+    if matched_in_file == 0:
         result["message"] = (
             f"В файле {len(stock_map)} строк, но нет совпадений с товарами в каталоге "
             "(по баркоду)."
         )
         return result
+
+    if not items:
+        result["message"] = (
+            f"В файле {len(stock_map)} строк, совпадений по баркоду {matched_in_file}. "
+            "Изменений остатков нет — в Ozon ничего не отправляли."
+        )
+        return result
+
+    by_key = _index_items_by_keys(items)
+    ozon_payload = [
+        {k: v for k, v in item.items() if k != "product"}
+        for item in items
+    ]
 
     try:
         warehouse_id = resolve_fbs_warehouse_id(
@@ -220,25 +272,41 @@ def _apply_stock_map(user, stock_map: dict[str, int], *, push_to_ozon: bool = Tr
             user.ozon_client_id,
             user.ozon_api_key,
             warehouse_id,
-            items,
+            ozon_payload,
         )
     except Exception as exc:
         result["ok"] = False
         result["error"] = str(exc)
-        result["message"] = (
-            f"Локально обновлено {local_updated}, ошибка выгрузки в Ozon: {exc}"
-        )
+        result["message"] = f"Ошибка выгрузки в Ozon: {exc}"
         return result
 
+    updated_with_products: list[dict] = []
+    for raw in ozon_result.get("updated_items") or []:
+        src = by_key.get(_item_lookup_key(raw))
+        if src is None and raw.get("product_id") not in (None, ""):
+            src = by_key.get(f"product:{raw['product_id']}")
+        if src is not None:
+            updated_with_products.append(src)
+
+    local_updated = _apply_local_stock_updates(updated_with_products)
+    result["updated"] = local_updated
     result["ozon_updated"] = ozon_result.get("updated", 0)
     result["ozon_failed"] = ozon_result.get("failed", 0)
+    result["ozon_deferred"] = ozon_result.get("deferred", 0)
     result["warehouse_id"] = warehouse_id
 
+    deferred = result["ozon_deferred"]
     if ozon_result.get("ok"):
-        result["message"] = (
-            f"Остатки FBS: локально {local_updated}, в Ozon обновлено "
-            f"{result['ozon_updated']} (склад {warehouse_id})."
-        )
+        if deferred:
+            result["message"] = (
+                f"Остатки FBS: в Ozon обновлено {result['ozon_updated']}, "
+                f"отложено из‑за частоты {deferred} (склад {warehouse_id})."
+            )
+        else:
+            result["message"] = (
+                f"Остатки FBS: локально {local_updated}, в Ozon обновлено "
+                f"{result['ozon_updated']} (склад {warehouse_id})."
+            )
     else:
         result["ok"] = False
         err_tail = ""
