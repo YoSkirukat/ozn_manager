@@ -916,6 +916,7 @@ class PriceExperimentSnapshot(db.Model):
     stock_fbs = db.Column(db.Integer, nullable=False, default=0)
     purchase_price = db.Column(db.Numeric(12, 2), nullable=True)
     prices = db.Column(db.JSON, nullable=True)
+    profit_markup = db.Column(db.JSON, nullable=True)
     source = db.Column(db.String(32), nullable=False, default=SOURCE_DAILY)
     created_at = db.Column(db.DateTime(timezone=True), default=utcnow, nullable=False)
 

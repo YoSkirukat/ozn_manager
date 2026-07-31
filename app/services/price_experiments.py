@@ -105,8 +105,23 @@ def _change_direction(current, previous) -> str | None:
     return "up" if cur > prev else "down"
 
 
+def _collect_profit_markup(product: Product) -> list[dict]:
+    """Снимок прибыли/наценки как на странице Товары."""
+    from app.services.product_profit import profit_markup_scheme_rows
+
+    rows = []
+    for scheme_label, line, negative in profit_markup_scheme_rows(product):
+        rows.append({
+            "scheme_label": scheme_label,
+            "line": line,
+            "negative": bool(negative),
+        })
+    return rows
+
+
 def _snapshot_to_dict(snapshot: PriceExperimentSnapshot) -> dict:
     prices = snapshot.prices if isinstance(snapshot.prices, dict) else {}
+    profit_rows = snapshot.profit_markup if isinstance(snapshot.profit_markup, list) else []
     return {
         "id": snapshot.id,
         "snapshot_date": snapshot.snapshot_date.isoformat() if snapshot.snapshot_date else None,
@@ -122,6 +137,7 @@ def _snapshot_to_dict(snapshot: PriceExperimentSnapshot) -> dict:
         "purchase_price_change": None,
         "prices": prices,
         "prices_list": _format_prices_for_ui(prices),
+        "profit_markup": profit_rows,
         "source": snapshot.source,
         "created_at": snapshot.created_at.isoformat() if snapshot.created_at else None,
     }
@@ -359,6 +375,7 @@ def _upsert_snapshot(
         raise ValueError("Товар эксперимента не найден.")
 
     prices = collect_product_prices(product, prices_api_item)
+    profit_markup = _collect_profit_markup(product)
     existing = PriceExperimentSnapshot.query.filter_by(
         item_id=item.id,
         snapshot_date=snapshot_date,
@@ -369,6 +386,7 @@ def _upsert_snapshot(
         existing.stock_fbs = int(product.stock_fbs or 0)
         existing.purchase_price = product.purchase_price
         existing.prices = prices
+        existing.profit_markup = profit_markup
         if existing.source != PriceExperimentSnapshot.SOURCE_ADD:
             existing.source = source
         return existing
@@ -380,6 +398,7 @@ def _upsert_snapshot(
         stock_fbs=int(product.stock_fbs or 0),
         purchase_price=product.purchase_price,
         prices=prices,
+        profit_markup=profit_markup,
         source=source,
         created_at=utcnow(),
     )

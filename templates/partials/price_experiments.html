@@ -212,6 +212,7 @@
                                         {% for price in item.snapshots[0].prices_list %}
                                         <th class="text-center">{{ price.label }}</th>
                                         {% endfor %}
+                                        <th class="text-center">Прибыль/Наценка</th>
                                         <th class="text-center">Источник</th>
                                     </tr>
                                 </thead>
@@ -271,6 +272,20 @@
                                             {% endif %}
                                         </td>
                                         {% endfor %}
+                                        <td class="text-center pe-profit-cell">
+                                            {% if snap.profit_markup %}
+                                            <div class="product-profit-lines pe-profit-lines">
+                                                {% for row in snap.profit_markup %}
+                                                <div class="product-profit-line">
+                                                    <span class="product-profit-scheme">{{ row.scheme_label }}:</span>
+                                                    <span class="product-profit-values{% if row.negative %} product-profit-negative{% endif %}">{{ row.line }}</span>
+                                                </div>
+                                                {% endfor %}
+                                            </div>
+                                            {% else %}
+                                            <span class="text-muted">—</span>
+                                            {% endif %}
+                                        </td>
                                         <td class="text-muted">
                                             {% if snap.source == 'add' %}при добавлении
                                             {% elif snap.source == 'daily' %}ежедневный
