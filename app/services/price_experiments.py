@@ -540,8 +540,18 @@ def remove_item(user_id: int, item_id: int) -> dict:
     return {"ok": True}
 
 
-def update_item_sale_price(user, item_id: int, new_price) -> dict:
-    """Меняет «Вашу цену» товара через Ozon API и обновляет сегодняшний срез."""
+def update_item_sale_price(
+    user,
+    item_id: int,
+    new_price,
+    *,
+    lower_min_price: bool = False,
+) -> dict:
+    """Меняет «Вашу цену» товара через Ozon API и обновляет сегодняшний срез.
+
+    Если новая цена ниже min_price и lower_min_price=False — возвращает
+    needs_min_price_confirm без вызова Ozon.
+    """
     from decimal import Decimal
 
     from app.ozon.product_prices import update_product_prices
@@ -580,6 +590,26 @@ def update_item_sale_price(user, item_id: int, new_price) -> dict:
         }
 
     raw = product.raw_data if isinstance(product.raw_data, dict) else {}
+    min_price = _money_or_none(raw.get("min_price"))
+    if (
+        min_price is not None
+        and min_price > 0
+        and float(price) + 0.0001 < min_price
+        and not lower_min_price
+    ):
+        return {
+            "ok": False,
+            "needs_min_price_confirm": True,
+            "price": float(price),
+            "price_display": format_money_ru(price),
+            "min_price": min_price,
+            "min_price_display": format_money_ru(min_price),
+            "error": (
+                f"Установленная вами цена ниже указанной минимальной цены "
+                f"({format_money_ru(min_price)} ₽)."
+            ),
+        }
+
     payload_item: dict = {
         "product_id": int(product.ozon_product_id),
         "price": f"{price:.2f}",
@@ -589,8 +619,10 @@ def update_item_sale_price(user, item_id: int, new_price) -> dict:
     old_price = _money_or_none(raw.get("old_price"))
     if old_price is not None and old_price > 0:
         payload_item["old_price"] = f"{old_price:.2f}"
-    min_price = _money_or_none(raw.get("min_price"))
-    if min_price is not None and min_price > 0:
+
+    if lower_min_price or (min_price is not None and float(price) + 0.0001 < (min_price or 0)):
+        payload_item["min_price"] = f"{price:.2f}"
+    elif min_price is not None and min_price > 0:
         payload_item["min_price"] = f"{min_price:.2f}"
 
     try:
@@ -612,6 +644,8 @@ def update_item_sale_price(user, item_id: int, new_price) -> dict:
     else:
         updated_raw = {}
     updated_raw["price"] = f"{price:.2f}"
+    if "min_price" in payload_item:
+        updated_raw["min_price"] = payload_item["min_price"]
     product.raw_data = updated_raw
 
     prices_map = _fetch_prices_api_map(user, [str(product.ozon_product_id)])
@@ -624,11 +658,15 @@ def update_item_sale_price(user, item_id: int, new_price) -> dict:
     item.experiment.updated_at = utcnow()
     db_session_commit()
 
+    message = "Цена обновлена в Ozon."
+    if lower_min_price:
+        message = "Ваша цена и минимальная цена обновлены в Ozon."
+
     result = {
         "ok": True,
         "price": float(price),
         "price_display": format_money_ru(price),
-        "message": "Цена обновлена в Ozon.",
+        "message": message,
         "item": _item_to_dict(item, include_history=True),
     }
     if api_result.get("warning"):

@@ -135,7 +135,14 @@ def experiments_update_item(item_id: int):
 @login_required
 def experiments_update_item_price(item_id: int):
     payload = request.get_json(silent=True) or {}
-    result = update_item_sale_price(current_user, item_id, payload.get("price"))
+    result = update_item_sale_price(
+        current_user,
+        item_id,
+        payload.get("price"),
+        lower_min_price=bool(payload.get("lower_min_price")),
+    )
+    if result.get("needs_min_price_confirm"):
+        return jsonify(result), 409
     status = 200 if result.get("ok") else 400
     return jsonify(result), status
 

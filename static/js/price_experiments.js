@@ -5,6 +5,8 @@ let peAddProductModal = null;
 let peCommentModal = null;
 let peEditModal = null;
 let peRemoveItemModal = null;
+let peMinPriceModal = null;
+let pePendingPriceInput = null;
 let peSearchTimer = null;
 /** @type {Map<number, {id:number, name:string, offer_id:string, barcode:string}>} */
 let peSelectedProducts = new Map();
@@ -60,11 +62,13 @@ function peEnsureModals() {
     const commentEl = document.getElementById("pe-comment-modal");
     const editEl = document.getElementById("pe-edit-modal");
     const removeEl = document.getElementById("pe-remove-item-modal");
+    const minPriceEl = document.getElementById("pe-min-price-modal");
     if (createEl) peCreateModal = bootstrap.Modal.getOrCreateInstance(createEl);
     if (addEl) peAddProductModal = bootstrap.Modal.getOrCreateInstance(addEl);
     if (commentEl) peCommentModal = bootstrap.Modal.getOrCreateInstance(commentEl);
     if (editEl) peEditModal = bootstrap.Modal.getOrCreateInstance(editEl);
     if (removeEl) peRemoveItemModal = bootstrap.Modal.getOrCreateInstance(removeEl);
+    if (minPriceEl) peMinPriceModal = bootstrap.Modal.getOrCreateInstance(minPriceEl);
 }
 
 function peOpenEditModal(title, note) {
@@ -236,13 +240,51 @@ function peNormalizePriceInput(value) {
         .replace(",", ".");
 }
 
-async function peSaveSalePrice(input) {
+async function pePatchSalePrice(itemId, price, lowerMinPrice = false) {
+    const res = await fetch(`/api/analytics/price-experiments/items/${itemId}/price`, {
+        method: "PATCH",
+        headers: {
+            "Content-Type": "application/json",
+            "X-Requested-With": "XMLHttpRequest",
+        },
+        body: JSON.stringify({ price, lower_min_price: lowerMinPrice }),
+    });
+    const data = await res.json().catch(() => ({}));
+    return { res, data };
+}
+
+function peShowMinPriceConfirm(input, data) {
+    pePendingPriceInput = input;
+    const textEl = document.getElementById("pe-min-price-modal-text");
+    const itemInput = document.getElementById("pe-min-price-item-id");
+    const priceInput = document.getElementById("pe-min-price-new-price");
+    const minDisplay = data.min_price_display || data.min_price || "—";
+    if (textEl) {
+        textEl.textContent =
+            `Установленная вами цена ниже указанной минимальной цены (${minDisplay} ₽). ` +
+            "Изменить минимальную цену на указанную вами?";
+    }
+    if (itemInput) itemInput.value = input.dataset.itemId || "";
+    if (priceInput) priceInput.value = peNormalizePriceInput(input.value);
+    peMinPriceModal?.show();
+}
+
+function peCancelMinPriceConfirm() {
+    if (pePendingPriceInput) {
+        pePendingPriceInput.value = pePendingPriceInput.dataset.savedValue || "";
+        pePendingPriceInput.classList.remove("is-error", "is-saving");
+        pePendingPriceInput.dataset.saving = "0";
+    }
+    pePendingPriceInput = null;
+}
+
+async function peSaveSalePrice(input, { lowerMinPrice = false } = {}) {
     const itemId = input.dataset.itemId;
     if (!itemId || input.dataset.saving === "1") return;
 
     const newValue = peNormalizePriceInput(input.value);
     const oldValue = input.dataset.savedValue ?? "";
-    if (newValue === oldValue) return;
+    if (newValue === oldValue && !lowerMinPrice) return;
 
     const experimentId = peCurrentExperimentId();
     input.dataset.saving = "1";
@@ -250,10 +292,16 @@ async function peSaveSalePrice(input) {
     input.classList.remove("is-error");
 
     try {
-        const data = await peApi(`/api/analytics/price-experiments/items/${itemId}/price`, {
-            method: "PATCH",
-            body: JSON.stringify({ price: newValue }),
-        });
+        const { res, data } = await pePatchSalePrice(itemId, newValue, lowerMinPrice);
+        if (data.needs_min_price_confirm) {
+            input.dataset.saving = "0";
+            input.classList.remove("is-saving");
+            peShowMinPriceConfirm(input, data);
+            return;
+        }
+        if (!res.ok || data.ok === false) {
+            throw new Error(data.error || data.message || `Ошибка ${res.status}`);
+        }
         if (data.unchanged) {
             input.value = data.price_display || input.value;
             input.dataset.savedValue = peNormalizePriceInput(data.price_display || input.value);
@@ -419,6 +467,39 @@ function peBindDetailActions() {
         });
     }
 
+    const minPriceConfirm = document.getElementById("pe-min-price-confirm");
+    if (minPriceConfirm && minPriceConfirm.dataset.bound !== "1") {
+        minPriceConfirm.dataset.bound = "1";
+        minPriceConfirm.addEventListener("click", async () => {
+            const input = pePendingPriceInput;
+            const price = document.getElementById("pe-min-price-new-price")?.value;
+            // Сбрасываем до hide, чтобы hidden.bs.modal не откатил значение
+            pePendingPriceInput = null;
+            if (!input || !price) {
+                peMinPriceModal?.hide();
+                return;
+            }
+            minPriceConfirm.disabled = true;
+            try {
+                peMinPriceModal?.hide();
+                input.value = price;
+                await peSaveSalePrice(input, { lowerMinPrice: true });
+            } finally {
+                minPriceConfirm.disabled = false;
+            }
+        });
+    }
+
+    const minPriceModalEl = document.getElementById("pe-min-price-modal");
+    if (minPriceModalEl && minPriceModalEl.dataset.bound !== "1") {
+        minPriceModalEl.dataset.bound = "1";
+        minPriceModalEl.addEventListener("hidden.bs.modal", () => {
+            if (pePendingPriceInput) {
+                peCancelMinPriceConfirm();
+            }
+        });
+    }
+
     document.querySelectorAll(".pe-edit-comment").forEach((btn) => {
         if (btn.dataset.bound === "1") return;
         btn.dataset.bound = "1";
@@ -575,6 +656,7 @@ document.addEventListener("page:loaded", (e) => {
         "btn-pe-edit-note",
         "pe-edit-submit",
         "pe-remove-item-confirm",
+        "pe-min-price-confirm",
         "btn-pe-run-toggle",
     ].forEach((id) => {
         const el = document.getElementById(id);
