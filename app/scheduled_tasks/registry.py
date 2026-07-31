@@ -68,6 +68,12 @@ SCHEDULED_TASKS: tuple[ScheduledTaskDef, ...] = (
         description="Загрузка возвратов FBO/FBS/realFBS за последние 30 дней.",
         implemented=True,
     ),
+    ScheduledTaskDef(
+        slug="price_experiments_snapshot",
+        title="Срезы экспериментов с ценами",
+        description="Ежедневный снимок остатков и цен по товарам в экспериментах.",
+        implemented=True,
+    ),
 )
 
 TASK_BY_SLUG = {t.slug: t for t in SCHEDULED_TASKS}

@@ -1,0 +1,398 @@
+<div data-page-title="{{ page_title }}" id="price-experiments-page"
+     data-experiment-id="{{ current_experiment.id if current_experiment else '' }}"
+     data-experiment-running="{{ '1' if current_experiment and current_experiment.is_running else '0' }}">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4">
+        <div>
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb mb-1 small">
+                    <li class="breadcrumb-item text-muted">Аналитика</li>
+                    {% if current_experiment %}
+                    <li class="breadcrumb-item">
+                        <a href="/analytics/price-experiments" data-nav="/analytics/price-experiments">Эксперименты с ценами</a>
+                    </li>
+                    <li class="breadcrumb-item active" aria-current="page">{{ current_experiment.title }}</li>
+                    {% else %}
+                    <li class="breadcrumb-item active" aria-current="page">Эксперименты с ценами</li>
+                    {% endif %}
+                </ol>
+            </nav>
+            <h1 class="h3 mb-0 d-inline-flex align-items-center gap-2">
+                {% if current_experiment %}
+                <span id="pe-experiment-title">{{ current_experiment.title }}</span>
+                <button type="button" class="btn btn-link pe-icon-btn p-0" id="btn-pe-edit-title"
+                        data-title="{{ current_experiment.title|e }}"
+                        data-note="{{ (current_experiment.note or '')|e }}"
+                        title="Редактировать название" aria-label="Редактировать название">
+                    <i class="bi bi-pencil" aria-hidden="true"></i>
+                </button>
+                {% else %}
+                Эксперименты с ценами
+                {% endif %}
+            </h1>
+        </div>
+        <div class="d-flex flex-wrap align-items-center gap-2">
+            {% if current_experiment %}
+            <button type="button"
+                    class="pe-run-toggle {% if current_experiment.is_running %}pe-run-toggle--running{% else %}pe-run-toggle--stopped{% endif %}"
+                    id="btn-pe-run-toggle"
+                    title="{% if current_experiment.is_running %}Остановить эксперимент{% else %}Запустить эксперимент{% endif %}"
+                    aria-label="{% if current_experiment.is_running %}Остановить эксперимент{% else %}Запустить эксперимент{% endif %}"
+                    aria-pressed="{{ 'true' if current_experiment.is_running else 'false' }}">
+                {% if current_experiment.is_running %}
+                <i class="bi bi-stop-fill" aria-hidden="true"></i>
+                {% else %}
+                <i class="bi bi-play-fill" aria-hidden="true"></i>
+                {% endif %}
+            </button>
+            <button type="button" class="btn btn-outline-secondary" id="btn-pe-snapshot-now">
+                <span class="spinner-border spinner-border-sm d-none me-1" id="pe-snapshot-spinner" role="status"></span>
+                Снять срез сейчас
+            </button>
+            <button type="button" class="btn btn-primary" id="btn-pe-add-product">Добавить товар</button>
+            {% else %}
+            <button type="button" class="btn btn-primary" id="btn-pe-create">Новый эксперимент</button>
+            {% endif %}
+        </div>
+    </div>
+
+    <div id="price-experiments-message"></div>
+
+    {% if not current_experiment %}
+    <div class="card shadow-sm mb-4">
+        <div class="card-body">
+            <p class="text-muted small mb-0">
+                Создайте эксперимент как отдельный документ, добавьте товары и фиксируйте остатки FBO/FBS,
+                закуп и цены продажи. Раз в сутки регламентное задание снимает новые срезы для динамики.
+            </p>
+        </div>
+    </div>
+
+    {% if experiments %}
+    <div class="products-table-wrap">
+        <table class="table table-hover align-middle bg-white rounded shadow-sm mb-0 products-table">
+            <thead class="table-light">
+                <tr>
+                    <th>Название</th>
+                    <th class="text-center">Товаров</th>
+                    <th>Дата создания</th>
+                    <th class="text-end"></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for exp in experiments %}
+                <tr>
+                    <td>
+                        <a href="/analytics/price-experiments?id={{ exp.id }}"
+                           data-nav="/analytics/price-experiments?id={{ exp.id }}"
+                           class="fw-semibold text-decoration-none">{{ exp.title }}</a>
+                        {% if exp.note %}
+                        <div class="small text-muted">{{ exp.note }}</div>
+                        {% endif %}
+                        <div class="small mt-1">
+                            {% if exp.is_running %}
+                            <span class="badge text-bg-success-subtle border border-success-subtle text-success-emphasis">Запущен</span>
+                            {% else %}
+                            <span class="badge text-bg-warning-subtle border border-warning-subtle text-warning-emphasis">Стоп</span>
+                            {% endif %}
+                        </div>
+                    </td>
+                    <td class="text-center">{{ exp.items_count }}</td>
+                    <td class="text-nowrap">{{ exp.created_at_display }}</td>
+                    <td class="text-end text-nowrap">
+                        <button type="button" class="btn btn-sm btn-outline-danger pe-delete-experiment"
+                                data-id="{{ exp.id }}" data-title="{{ exp.title }}">Удалить</button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="alert alert-light border">Пока нет экспериментов. Создайте первый.</div>
+    {% endif %}
+
+    {% else %}
+    <div class="d-flex align-items-start gap-2 mb-3">
+        <p class="text-muted mb-0 flex-grow-1" id="pe-experiment-note">
+            {% if current_experiment.note %}{{ current_experiment.note }}{% else %}<span class="fst-italic">Без описания</span>{% endif %}
+        </p>
+        <button type="button" class="btn btn-link pe-icon-btn p-0 flex-shrink-0" id="btn-pe-edit-note"
+                data-title="{{ current_experiment.title|e }}"
+                data-note="{{ (current_experiment.note or '')|e }}"
+                title="Редактировать описание" aria-label="Редактировать описание">
+            <i class="bi bi-pencil" aria-hidden="true"></i>
+        </button>
+    </div>
+    <p class="text-muted small mb-3">
+        Создан: {{ current_experiment.created_at_display }}.
+        {% if current_experiment.is_running %}
+        Эксперимент <span class="text-success">запущен</span> — срезы снимаются ежедневно.
+        {% else %}
+        Эксперимент <span class="text-warning">остановлен</span> — ежедневные срезы не снимаются.
+        {% endif %}
+        Кнопка «Снять срез сейчас» работает в любом состоянии.
+    </p>
+
+    {% if current_experiment['items'] %}
+    <div class="products-table-wrap">
+        <table class="table table-hover align-middle bg-white rounded shadow-sm mb-0 products-table pe-items-table">
+            <thead class="table-light">
+                <tr>
+                    <th></th>
+                    <th class="products-col-product">Товар</th>
+                    <th>Комментарий</th>
+                    <th class="text-end"></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in current_experiment['items'] %}
+                <tr class="pe-item-row" data-item-id="{{ item.id }}">
+                    <td class="text-center pe-expand-cell">
+                        <button type="button" class="pe-toggle-history" data-item-id="{{ item.id }}"
+                                aria-label="История срезов" aria-expanded="false">
+                            <span class="pe-toggle-chevron" aria-hidden="true">&gt;</span>
+                        </button>
+                    </td>
+                    <td class="products-col-product">
+                        <div class="d-flex align-items-start gap-2">
+                            {% if item.product.thumbnail_url %}
+                            <img src="{{ item.product.thumbnail_url }}" alt="" class="product-thumb" loading="lazy"
+                                 referrerpolicy="no-referrer">
+                            {% endif %}
+                            <div class="min-w-0">
+                                <div class="product-cell-title" title="{{ item.product.name }}">
+                                    <span class="product-cell-title-text">{{ item.product.name }}</span>{% if item.product.ozon_url %}<a href="{{ item.product.ozon_url }}" class="product-marketplace-link"
+                                       target="_blank" rel="noopener noreferrer"
+                                       title="Открыть на Ozon" aria-label="Открыть {{ item.product.name|e }} на Ozon"><i class="bi bi-box-arrow-up-right" aria-hidden="true"></i></a>{% endif %}
+                                </div>
+                                <div class="product-cell-meta font-monospace">{{ item.product.offer_id or '—' }}</div>
+                                <div class="product-cell-meta font-monospace">{{ item.product.barcode or '—' }}</div>
+                            </div>
+                        </div>
+                    </td>
+                    <td class="pe-comment-cell">
+                        <div class="d-flex align-items-start gap-2">
+                            <div class="small pe-comment-text flex-grow-1">{{ item.comment or '—' }}</div>
+                            <button type="button" class="btn btn-link pe-icon-btn p-0 flex-shrink-0 pe-edit-comment"
+                                    data-item-id="{{ item.id }}" data-comment="{{ (item.comment or '')|e }}"
+                                    title="Редактировать комментарий" aria-label="Редактировать комментарий">
+                                <i class="bi bi-pencil" aria-hidden="true"></i>
+                            </button>
+                        </div>
+                    </td>
+                    <td class="text-end">
+                        <button type="button" class="btn btn-link pe-icon-btn pe-icon-btn--danger p-0 pe-remove-item"
+                                data-item-id="{{ item.id }}"
+                                title="Удалить товар" aria-label="Удалить товар">
+                            <i class="bi bi-trash" aria-hidden="true"></i>
+                        </button>
+                    </td>
+                </tr>
+                <tr class="pe-history-row d-none" data-history-for="{{ item.id }}">
+                    <td colspan="4" class="bg-light">
+                        <div class="small fw-semibold mb-2">Динамика срезов</div>
+                        {% if item.snapshots %}
+                        <div class="table-responsive">
+                            <table class="table table-sm mb-0 pe-history-table">
+                                <thead>
+                                    <tr>
+                                        <th class="text-center">Дата</th>
+                                        <th class="text-center">FBO</th>
+                                        <th class="text-center">FBS</th>
+                                        <th class="text-center">Закуп</th>
+                                        {% for price in item.snapshots[0].prices_list %}
+                                        <th class="text-center">{{ price.label }}</th>
+                                        {% endfor %}
+                                        <th class="text-center">Источник</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for snap in item.snapshots %}
+                                    <tr>
+                                        <td class="text-center text-nowrap">{{ snap.snapshot_date_display }}</td>
+                                        <td class="text-center text-nowrap">
+                                            <span class="pe-value-with-change">
+                                                {{ snap.stock_fbo }}
+                                                {% if snap.stock_fbo_change == 'up' %}<span class="pe-change pe-change--up" title="Рост" aria-label="Рост">▲</span>
+                                                {% elif snap.stock_fbo_change == 'down' %}<span class="pe-change pe-change--down" title="Снижение" aria-label="Снижение">▼</span>
+                                                {% endif %}
+                                            </span>
+                                        </td>
+                                        <td class="text-center text-nowrap">
+                                            <span class="pe-value-with-change">
+                                                {{ snap.stock_fbs }}
+                                                {% if snap.stock_fbs_change == 'up' %}<span class="pe-change pe-change--up" title="Рост" aria-label="Рост">▲</span>
+                                                {% elif snap.stock_fbs_change == 'down' %}<span class="pe-change pe-change--down" title="Снижение" aria-label="Снижение">▼</span>
+                                                {% endif %}
+                                            </span>
+                                        </td>
+                                        <td class="text-center text-nowrap">
+                                            <span class="pe-value-with-change">
+                                                {{ snap.purchase_price_display }}
+                                                {% if snap.purchase_price_change == 'up' %}<span class="pe-change pe-change--up" title="Рост" aria-label="Рост">▲</span>
+                                                {% elif snap.purchase_price_change == 'down' %}<span class="pe-change pe-change--down" title="Снижение" aria-label="Снижение">▼</span>
+                                                {% endif %}
+                                            </span>
+                                        </td>
+                                        {% for price in snap.prices_list %}
+                                        <td class="text-center text-nowrap">
+                                            <span class="pe-value-with-change">
+                                                {{ price.display }}
+                                                {% if price.change == 'up' %}<span class="pe-change pe-change--up" title="Рост" aria-label="Рост">▲</span>
+                                                {% elif price.change == 'down' %}<span class="pe-change pe-change--down" title="Снижение" aria-label="Снижение">▼</span>
+                                                {% endif %}
+                                            </span>
+                                        </td>
+                                        {% endfor %}
+                                        <td class="text-muted">
+                                            {% if snap.source == 'add' %}при добавлении
+                                            {% elif snap.source == 'daily' %}ежедневный
+                                            {% elif snap.source == 'manual' %}вручную
+                                            {% else %}{{ snap.source }}{% endif %}
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% else %}
+                        <div class="text-muted">Срезов пока нет.</div>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="alert alert-light border">В эксперименте пока нет товаров. Добавьте первый.</div>
+    {% endif %}
+    {% endif %}
+</div>
+
+{# Модалка: новый эксперимент #}
+<div class="modal fade" id="pe-create-modal" tabindex="-1" aria-labelledby="pe-create-modal-label" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="pe-create-modal-label">Новый эксперимент</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label" for="pe-create-title">Название</label>
+                    <input type="text" class="form-control" id="pe-create-title" maxlength="256" required>
+                </div>
+                <div class="mb-0">
+                    <label class="form-label" for="pe-create-note">Описание (необязательно)</label>
+                    <textarea class="form-control" id="pe-create-note" rows="3"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Отмена</button>
+                <button type="button" class="btn btn-primary" id="pe-create-submit">Создать</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# Модалка: добавить товар #}
+<div class="modal fade" id="pe-add-product-modal" tabindex="-1" aria-labelledby="pe-add-product-modal-label" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="pe-add-product-modal-label">Добавить товары в эксперимент</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label" for="pe-product-search">Поиск товара</label>
+                    <input type="text" class="form-control" id="pe-product-search"
+                           placeholder="Артикул, название или баркод (от 2 символов)">
+                    <div id="pe-product-search-results" class="pe-search-results mt-2"></div>
+                </div>
+                <div class="mb-3" id="pe-selected-products-wrap">
+                    <div class="small text-muted mb-1">Выбранные товары (<span id="pe-selected-count">0</span>)</div>
+                    <div id="pe-selected-products-list" class="pe-selected-list">
+                        <div class="text-muted small pe-selected-empty">Пока пусто — нажмите товар в результатах поиска</div>
+                    </div>
+                </div>
+                <div class="mb-0">
+                    <label class="form-label" for="pe-product-comment">Комментарий (общий для всех)</label>
+                    <textarea class="form-control" id="pe-product-comment" rows="3"
+                              placeholder="Зачем добавлены товары, гипотеза эксперимента…"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Отмена</button>
+                <button type="button" class="btn btn-primary" id="pe-add-product-submit" disabled>Добавить</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# Модалка: комментарий #}
+<div class="modal fade" id="pe-comment-modal" tabindex="-1" aria-labelledby="pe-comment-modal-label" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="pe-comment-modal-label">Комментарий к товару</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+            </div>
+            <div class="modal-body">
+                <textarea class="form-control" id="pe-comment-input" rows="4"></textarea>
+                <input type="hidden" id="pe-comment-item-id" value="">
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Отмена</button>
+                <button type="button" class="btn btn-primary" id="pe-comment-submit">Сохранить</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# Модалка: редактирование эксперимента #}
+<div class="modal fade" id="pe-edit-modal" tabindex="-1" aria-labelledby="pe-edit-modal-label" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="pe-edit-modal-label">Редактировать эксперимент</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label" for="pe-edit-title">Название</label>
+                    <input type="text" class="form-control" id="pe-edit-title" maxlength="256" required>
+                </div>
+                <div class="mb-0">
+                    <label class="form-label" for="pe-edit-note">Описание</label>
+                    <textarea class="form-control" id="pe-edit-note" rows="3"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Отмена</button>
+                <button type="button" class="btn btn-primary" id="pe-edit-submit">Сохранить</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# Модалка: удаление товара #}
+<div class="modal fade" id="pe-remove-item-modal" tabindex="-1" aria-labelledby="pe-remove-item-modal-label" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="pe-remove-item-modal-label">Удаление товара</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-0">Вы уверены что хотите удалить товар из списка?</p>
+                <input type="hidden" id="pe-remove-item-id" value="">
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Отмена</button>
+                <button type="button" class="btn btn-danger" id="pe-remove-item-confirm">Удалить</button>
+            </div>
+        </div>
+    </div>
+</div>

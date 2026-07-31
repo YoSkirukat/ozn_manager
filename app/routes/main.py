@@ -58,6 +58,11 @@ PAGES = {
         "pages/warehouse_slots.html",
         "Склады и слоты — Ozon Manager",
     ),
+    "/analytics/price-experiments": (
+        "partials/price_experiments.html",
+        "pages/price_experiments.html",
+        "Эксперименты с ценами — Ozon Manager",
+    ),
     "/changelog": ("partials/changelog.html", "pages/changelog.html", "Журнал изменений — Ozon Manager"),
 }
 
@@ -425,6 +430,28 @@ def analytics_warehouse_slots():
         "/analytics/warehouse-slots",
         clusters=clusters,
         load_error=load_error,
+        has_ozon=current_user.has_ozon_credentials(),
+    )
+
+
+@main_bp.route("/analytics/price-experiments")
+@login_required
+def analytics_price_experiments():
+    from app.services.price_experiments import get_experiment, list_experiments
+
+    experiment_id = request.args.get("id")
+    experiments = list_experiments(current_user.id)
+    current_experiment = None
+    if experiment_id:
+        try:
+            current_experiment = get_experiment(current_user.id, int(experiment_id))
+        except (TypeError, ValueError):
+            current_experiment = None
+
+    return _render_page(
+        "/analytics/price-experiments",
+        experiments=experiments,
+        current_experiment=current_experiment,
         has_ozon=current_user.has_ozon_credentials(),
     )
 

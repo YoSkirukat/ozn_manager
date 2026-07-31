@@ -10,6 +10,7 @@ from app.routes.api.supply_planning import supply_planning_api_bp
 from app.routes.api.promotions import promotions_api_bp
 from app.routes.api.warehouse_slots import warehouse_slots_api_bp
 from app.routes.api.notifications import notifications_api_bp
+from app.routes.api.price_experiments import price_experiments_api_bp
 
 api_bp = Blueprint("api", __name__, url_prefix="/api")
 api_bp.register_blueprint(dashboard_bp)
@@ -22,3 +23,4 @@ api_bp.register_blueprint(scheduled_tasks_api_bp)
 api_bp.register_blueprint(promotions_api_bp)
 api_bp.register_blueprint(warehouse_slots_api_bp)
 api_bp.register_blueprint(notifications_api_bp)
+api_bp.register_blueprint(price_experiments_api_bp)

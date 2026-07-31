@@ -72,6 +72,8 @@ def run_scheduled_task(user_id: int, task_slug: str) -> None:
             result = _run_products_sync(user)
         elif task_slug == "returns_check":
             result = _run_returns_check(user)
+        elif task_slug == "price_experiments_snapshot":
+            result = _run_price_experiments_snapshot(user)
         else:
             result = {"ok": False, "error": "Задание не реализовано."}
 
@@ -214,3 +216,9 @@ def _run_products_sync(user: User) -> dict:
 
 def _run_returns_check(user: User) -> dict:
     return run_returns_check(user)
+
+
+def _run_price_experiments_snapshot(user: User) -> dict:
+    from app.services.price_experiments import take_daily_snapshots
+
+    return take_daily_snapshots(user)

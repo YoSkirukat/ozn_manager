@@ -60,6 +60,9 @@
                             <li>
                                 <a class="dropdown-item" href="/analytics/warehouse-slots" data-nav="/analytics/warehouse-slots">Склады и слоты</a>
                             </li>
+                            <li>
+                                <a class="dropdown-item" href="/analytics/price-experiments" data-nav="/analytics/price-experiments">Эксперименты с ценами</a>
+                            </li>
                         </ul>
                     </li>
                 </ul>
@@ -172,6 +175,7 @@
     <script src="{{ url_for('static', filename='js/supply_planning.js') }}" defer></script>
     <script src="{{ url_for('static', filename='js/promotions.js') }}" defer></script>
     <script src="{{ url_for('static', filename='js/warehouse_slots.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/price_experiments.js') }}" defer></script>
     <script src="{{ url_for('static', filename='js/returns.js') }}" defer></script>
     {% block extra_scripts %}{% endblock %}
 </body>

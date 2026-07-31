@@ -71,6 +71,11 @@ class User(UserMixin, db.Model):
         back_populates="user",
         cascade="all, delete-orphan",
     )
+    price_experiments = db.relationship(
+        "PriceExperiment",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
 
     def set_password(self, password: str) -> None:
         self.password_hash = generate_password_hash(password)
@@ -816,3 +821,102 @@ class WarehouseSlotWatch(db.Model):
             "last_availability_state": self.last_availability_state,
             "watch_key": f"{self.macrolocal_cluster_id}:{self.storage_warehouse_id}",
         }
+
+
+class PriceExperiment(db.Model):
+    """Документ эксперимента с ценами."""
+
+    __tablename__ = "price_experiments"
+
+    STATUS_ACTIVE = "active"
+    STATUS_STOPPED = "stopped"
+    STATUS_ARCHIVED = "archived"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    title = db.Column(db.String(256), nullable=False)
+    note = db.Column(db.Text, nullable=True)
+    status = db.Column(db.String(32), nullable=False, default=STATUS_ACTIVE, index=True)
+    created_at = db.Column(db.DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at = db.Column(
+        db.DateTime(timezone=True),
+        default=utcnow,
+        onupdate=utcnow,
+        nullable=False,
+    )
+
+    user = db.relationship("User", back_populates="price_experiments")
+    items = db.relationship(
+        "PriceExperimentItem",
+        back_populates="experiment",
+        cascade="all, delete-orphan",
+        order_by="PriceExperimentItem.added_at.desc()",
+    )
+
+
+class PriceExperimentItem(db.Model):
+    """Товар в эксперименте с ценами."""
+
+    __tablename__ = "price_experiment_items"
+    __table_args__ = (
+        db.UniqueConstraint("experiment_id", "product_id", name="uq_price_experiment_item_product"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    experiment_id = db.Column(
+        db.Integer,
+        db.ForeignKey("price_experiments.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    product_id = db.Column(
+        db.Integer,
+        db.ForeignKey("products.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    comment = db.Column(db.Text, nullable=True)
+    added_at = db.Column(db.DateTime(timezone=True), default=utcnow, nullable=False)
+
+    experiment = db.relationship("PriceExperiment", back_populates="items")
+    product = db.relationship("Product")
+    snapshots = db.relationship(
+        "PriceExperimentSnapshot",
+        back_populates="item",
+        cascade="all, delete-orphan",
+        order_by="PriceExperimentSnapshot.snapshot_date.desc()",
+    )
+
+
+class PriceExperimentSnapshot(db.Model):
+    """Срез остатков и цен товара в эксперименте (день / при добавлении)."""
+
+    __tablename__ = "price_experiment_snapshots"
+    __table_args__ = (
+        db.UniqueConstraint(
+            "item_id",
+            "snapshot_date",
+            name="uq_price_experiment_snapshot_item_date",
+        ),
+    )
+
+    SOURCE_ADD = "add"
+    SOURCE_DAILY = "daily"
+    SOURCE_MANUAL = "manual"
+
+    id = db.Column(db.Integer, primary_key=True)
+    item_id = db.Column(
+        db.Integer,
+        db.ForeignKey("price_experiment_items.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    snapshot_date = db.Column(db.Date, nullable=False, index=True)
+    stock_fbo = db.Column(db.Integer, nullable=False, default=0)
+    stock_fbs = db.Column(db.Integer, nullable=False, default=0)
+    purchase_price = db.Column(db.Numeric(12, 2), nullable=True)
+    prices = db.Column(db.JSON, nullable=True)
+    source = db.Column(db.String(32), nullable=False, default=SOURCE_DAILY)
+    created_at = db.Column(db.DateTime(timezone=True), default=utcnow, nullable=False)
+
+    item = db.relationship("PriceExperimentItem", back_populates="snapshots")
