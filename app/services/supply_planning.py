@@ -1,14 +1,15 @@
-"""Планирование поставки: движение товара по складу за период."""
+"""Планирование поставки: движение товара по складу или кластеру за период."""
 
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 from datetime import date, timedelta
 from typing import Any
 
 from app.datetime_fmt import local_today, utc_bounds_for_local_dates
 from app.models import ORDER_STATUS_DELIVERED, Product, Shipment
-from app.ozon.stocks import fetch_stock_rows
+from app.ozon.stocks import _row_quantity, fetch_stock_rows, group_warehouses
 from app.ozon.supplies import fetch_bundle_items
 from app.services.stock_report import get_stock_report_cache
 from app.services.supply_sync import load_supplies_from_ozon
@@ -22,6 +23,10 @@ SUPPLY_RECEIVED_STATUSES = frozenset({
     "COMPLETED",
 })
 
+SCOPE_WAREHOUSE = "warehouse"
+SCOPE_CLUSTER = "cluster"
+ALL_TARGET = "all"
+
 
 def normalize_warehouse_name(name: str | None) -> str:
     if not name:
@@ -30,6 +35,10 @@ def normalize_warehouse_name(name: str | None) -> str:
     while "__" in text:
         text = text.replace("__", "_")
     return text
+
+
+def normalize_cluster_name(name: str | None) -> str:
+    return re.sub(r"\s+", " ", str(name or "").strip()).casefold()
 
 
 def warehouse_names_match(left: str | None, right: str | None) -> bool:
@@ -48,16 +57,119 @@ def _product_key(offer_id: str | None, sku: str | None = None) -> str:
     return "unknown"
 
 
-def _warehouse_stock_rows(rows: list[dict], warehouse_name: str) -> list[dict]:
-    target = normalize_warehouse_name(warehouse_name)
+def _normalized_warehouse_set(names: list[str] | set[str] | None) -> set[str] | None:
+    if names is None:
+        return None
+    return {normalize_warehouse_name(name) for name in names if normalize_warehouse_name(name)}
+
+
+def _warehouse_in_scope(warehouse_name: str | None, allowed_normalized: set[str] | None) -> bool:
+    if allowed_normalized is None:
+        return True
+    return normalize_warehouse_name(warehouse_name) in allowed_normalized
+
+
+def _iter_cluster_warehouses(clusters: list[dict]) -> list[tuple[str, str]]:
+    pairs: list[tuple[str, str]] = []
+    for cluster in clusters:
+        if not isinstance(cluster, dict):
+            continue
+        cluster_name = str(cluster.get("name") or "").strip()
+        if not cluster_name:
+            continue
+        warehouses: list = []
+        for logistic in cluster.get("logistic_clusters") or []:
+            if isinstance(logistic, dict):
+                nested = logistic.get("warehouses") or []
+                if isinstance(nested, list):
+                    warehouses.extend(nested)
+        top = cluster.get("warehouses")
+        if isinstance(top, list):
+            warehouses.extend(top)
+        for warehouse in warehouses:
+            if not isinstance(warehouse, dict):
+                continue
+            warehouse_name = str(warehouse.get("name") or "").strip()
+            if warehouse_name:
+                pairs.append((cluster_name, warehouse_name))
+    return pairs
+
+
+def _load_cluster_warehouse_map(user) -> dict[str, Any]:
+    """Связка складов с кластерами из /v1/cluster/list."""
+    warehouse_to_cluster: dict[str, str] = {}
+    cluster_warehouses: dict[str, list[str]] = {}
+    if not user.has_ozon_credentials():
+        return {
+            "warehouse_to_cluster": warehouse_to_cluster,
+            "cluster_warehouses": cluster_warehouses,
+        }
+    try:
+        from app.services.warehouse_slots import _get_cluster_list_cached
+
+        clusters = _get_cluster_list_cached(user)
+    except Exception:
+        clusters = []
+
+    for cluster_name, warehouse_name in _iter_cluster_warehouses(clusters):
+        key = normalize_warehouse_name(warehouse_name)
+        if not key:
+            continue
+        warehouse_to_cluster.setdefault(key, cluster_name)
+        bucket = cluster_warehouses.setdefault(cluster_name, [])
+        if warehouse_name not in bucket:
+            bucket.append(warehouse_name)
+
+    return {
+        "warehouse_to_cluster": warehouse_to_cluster,
+        "cluster_warehouses": cluster_warehouses,
+    }
+
+
+def _resolve_cluster_name(name: str, cluster_warehouses: dict[str, list[str]]) -> str | None:
+    target = normalize_cluster_name(name)
+    if not target:
+        return None
+    for cluster_name in cluster_warehouses:
+        if normalize_cluster_name(cluster_name) == target:
+            return cluster_name
+    return None
+
+
+def _cluster_from_order(raw: dict) -> str:
+    financial = raw.get("financial_data") if isinstance(raw.get("financial_data"), dict) else {}
+    return str(financial.get("cluster_from") or "").strip()
+
+
+def _order_warehouse_name(raw: dict) -> str:
+    analytics = raw.get("analytics_data") if isinstance(raw.get("analytics_data"), dict) else {}
+    return str(analytics.get("warehouse_name") or "").strip()
+
+
+def _order_in_scope(
+    raw: dict,
+    *,
+    allowed_normalized: set[str] | None,
+    allowed_cluster_names: set[str] | None,
+) -> bool:
+    if allowed_normalized is None and not allowed_cluster_names:
+        return True
+    warehouse_name = _order_warehouse_name(raw)
+    if allowed_normalized is not None and _warehouse_in_scope(warehouse_name, allowed_normalized):
+        return True
+    if allowed_cluster_names:
+        cluster_from = normalize_cluster_name(_cluster_from_order(raw))
+        if cluster_from and cluster_from in allowed_cluster_names:
+            return True
+    return False
+
+
+def _warehouse_stock_rows(rows: list[dict], allowed_normalized: set[str] | None) -> list[dict]:
     items = []
     for row in rows:
-        if normalize_warehouse_name(row.get("warehouse_name")) != target:
+        if not _warehouse_in_scope(row.get("warehouse_name"), allowed_normalized):
             continue
-        free_qty = int(row.get("free_to_sell_amount") or 0)
-        reserved = int(row.get("reserved_amount") or 0)
-        promised = int(row.get("promised_amount") or 0)
-        qty = free_qty + reserved + promised
+        qty = _row_quantity(row)
         if qty <= 0:
             continue
         items.append(
@@ -129,7 +241,7 @@ def _resolve_product_meta(
     }
 
 
-def _shipments_in_range(user_id: int, warehouse_name: str, start, end) -> list[Shipment]:
+def _shipments_in_range(user_id: int, allowed_normalized: set[str] | None, start, end) -> list[Shipment]:
     shipments = (
         Shipment.query.filter(
             Shipment.user_id == user_id,
@@ -143,7 +255,7 @@ def _shipments_in_range(user_id: int, warehouse_name: str, start, end) -> list[S
     for shipment in shipments:
         if shipment.status not in SUPPLY_RECEIVED_STATUSES:
             continue
-        if not warehouse_names_match(shipment.warehouse_name, warehouse_name):
+        if not _warehouse_in_scope(shipment.warehouse_name, allowed_normalized):
             continue
         result.append(shipment)
     return result
@@ -164,12 +276,12 @@ def _bundle_ids(shipment: Shipment) -> list[str]:
 
 def _aggregate_incoming(
     user,
-    warehouse_name: str,
+    allowed_normalized: set[str] | None,
     date_from: date,
     date_to: date,
 ) -> tuple[dict[str, int], dict[str, dict[str, Any]]]:
     start, end = utc_bounds_for_local_dates(date_from, date_to)
-    shipments = _shipments_in_range(user.id, warehouse_name, start, end)
+    shipments = _shipments_in_range(user.id, allowed_normalized, start, end)
     totals: dict[str, int] = defaultdict(int)
     meta: dict[str, dict[str, Any]] = {}
 
@@ -203,7 +315,9 @@ def _aggregate_fbo_orders(
     user_id: int,
     date_from: date,
     date_to: date,
-    warehouse_name: str | None = None,
+    *,
+    allowed_normalized: set[str] | None = None,
+    allowed_cluster_names: set[str] | None = None,
 ) -> tuple[dict[str, int], dict[str, dict[str, Any]]]:
     from app.models import Order
 
@@ -223,10 +337,12 @@ def _aggregate_fbo_orders(
 
     for order in orders:
         raw = order.raw_data if isinstance(order.raw_data, dict) else {}
-        if warehouse_name:
-            analytics = raw.get("analytics_data") if isinstance(raw.get("analytics_data"), dict) else {}
-            if not warehouse_names_match(analytics.get("warehouse_name"), warehouse_name):
-                continue
+        if not _order_in_scope(
+            raw,
+            allowed_normalized=allowed_normalized,
+            allowed_cluster_names=allowed_cluster_names,
+        ):
+            continue
         for item in raw.get("products") or []:
             if not isinstance(item, dict):
                 continue
@@ -244,11 +360,19 @@ def _aggregate_fbo_orders(
 
 def _aggregate_outgoing(
     user_id: int,
-    warehouse_name: str,
     date_from: date,
     date_to: date,
+    *,
+    allowed_normalized: set[str] | None = None,
+    allowed_cluster_names: set[str] | None = None,
 ) -> tuple[dict[str, int], dict[str, dict[str, Any]]]:
-    return _aggregate_fbo_orders(user_id, date_from, date_to, warehouse_name=warehouse_name)
+    return _aggregate_fbo_orders(
+        user_id,
+        date_from,
+        date_to,
+        allowed_normalized=allowed_normalized,
+        allowed_cluster_names=allowed_cluster_names,
+    )
 
 
 def _aggregate_fbo_stock_all_warehouses(
@@ -257,10 +381,7 @@ def _aggregate_fbo_stock_all_warehouses(
     totals: dict[str, int] = defaultdict(int)
     meta: dict[str, dict[str, Any]] = {}
     for row in stock_rows:
-        free_qty = int(row.get("free_to_sell_amount") or 0)
-        reserved = int(row.get("reserved_amount") or 0)
-        promised = int(row.get("promised_amount") or 0)
-        qty = free_qty + reserved + promised
+        qty = _row_quantity(row)
         if qty <= 0:
             continue
         key = _product_key(row.get("item_code"), row.get("sku"))
@@ -272,10 +393,13 @@ def _aggregate_fbo_stock_all_warehouses(
     return totals, meta
 
 
-def _current_stock_map(rows: list[dict], warehouse_name: str) -> tuple[dict[str, int], dict[str, dict[str, Any]]]:
+def _current_stock_map(
+    rows: list[dict],
+    allowed_normalized: set[str] | None,
+) -> tuple[dict[str, int], dict[str, dict[str, Any]]]:
     totals: dict[str, int] = defaultdict(int)
     meta: dict[str, dict[str, Any]] = {}
-    for item in _warehouse_stock_rows(rows, warehouse_name):
+    for item in _warehouse_stock_rows(rows, allowed_normalized):
         key = _product_key(item.get("offer_id"), item.get("sku"))
         totals[key] += int(item.get("quantity") or 0)
         meta[key] = {
@@ -285,20 +409,98 @@ def _current_stock_map(rows: list[dict], warehouse_name: str) -> tuple[dict[str,
     return totals, meta
 
 
+def _scope_filters(
+    *,
+    warehouse_name: str | None,
+    cluster_name: str | None,
+    mapping: dict[str, Any],
+) -> dict[str, Any]:
+    cluster_warehouses: dict[str, list[str]] = mapping.get("cluster_warehouses") or {}
+
+    if cluster_name:
+        if not cluster_warehouses:
+            return {
+                "ok": False,
+                "error": "Не удалось загрузить список кластеров. Попробуйте позже.",
+            }
+        if cluster_name == ALL_TARGET:
+            all_warehouses: list[str] = []
+            for names in cluster_warehouses.values():
+                all_warehouses.extend(names)
+            return {
+                "ok": True,
+                "scope": SCOPE_CLUSTER,
+                "scope_label": "Кластер",
+                "scope_name": "Все кластеры",
+                "allowed_normalized": _normalized_warehouse_set(all_warehouses) or set(),
+                "allowed_cluster_names": {
+                    normalize_cluster_name(name) for name in cluster_warehouses
+                },
+            }
+        resolved = _resolve_cluster_name(cluster_name, cluster_warehouses)
+        if not resolved:
+            return {"ok": False, "error": "Кластер не найден."}
+        warehouses = cluster_warehouses.get(resolved) or []
+        return {
+            "ok": True,
+            "scope": SCOPE_CLUSTER,
+            "scope_label": "Кластер",
+            "scope_name": resolved,
+            "allowed_normalized": _normalized_warehouse_set(warehouses) or set(),
+            "allowed_cluster_names": {normalize_cluster_name(resolved)},
+        }
+
+    if warehouse_name == ALL_TARGET:
+        return {
+            "ok": True,
+            "scope": SCOPE_WAREHOUSE,
+            "scope_label": "Склад",
+            "scope_name": "Все склады",
+            "allowed_normalized": None,
+            "allowed_cluster_names": None,
+        }
+
+    if warehouse_name:
+        return {
+            "ok": True,
+            "scope": SCOPE_WAREHOUSE,
+            "scope_label": "Склад",
+            "scope_name": warehouse_name,
+            "allowed_normalized": _normalized_warehouse_set([warehouse_name]) or set(),
+            "allowed_cluster_names": None,
+        }
+
+    return {"ok": False, "error": "Выберите склад или кластер."}
+
+
 def build_supply_planning_report(
     user,
-    warehouse_name: str,
     date_from: date,
     date_to: date,
+    *,
+    warehouse_name: str | None = None,
+    cluster_name: str | None = None,
 ) -> dict:
     if not user.has_ozon_credentials():
         return {"ok": False, "error": "Подключите Ozon API в профиле."}
-    if not warehouse_name:
-        return {"ok": False, "error": "Выберите склад."}
+    if not warehouse_name and not cluster_name:
+        return {"ok": False, "error": "Выберите склад или кластер."}
     if date_from > date_to:
         return {"ok": False, "error": "Дата начала не может быть позже даты окончания."}
     if (date_to - date_from).days > 365:
         return {"ok": False, "error": "Максимальный период — 365 дней."}
+
+    mapping = _load_cluster_warehouse_map(user)
+    scope = _scope_filters(
+        warehouse_name=warehouse_name,
+        cluster_name=cluster_name,
+        mapping=mapping,
+    )
+    if not scope.get("ok"):
+        return {"ok": False, "error": scope.get("error") or "Не удалось определить склад или кластер."}
+
+    allowed_normalized = scope["allowed_normalized"]
+    allowed_cluster_names = scope["allowed_cluster_names"]
 
     sync_to = max(date_to, local_today())
     try:
@@ -313,18 +515,30 @@ def build_supply_planning_report(
     except Exception as exc:
         return {"ok": False, "error": f"Не удалось загрузить остатки: {exc}"}
 
-    incoming, incoming_meta = _aggregate_incoming(user, warehouse_name, date_from, date_to)
-    outgoing, outgoing_meta = _aggregate_outgoing(user.id, warehouse_name, date_from, date_to)
+    incoming, incoming_meta = _aggregate_incoming(user, allowed_normalized, date_from, date_to)
+    outgoing, outgoing_meta = _aggregate_outgoing(
+        user.id,
+        date_from,
+        date_to,
+        allowed_normalized=allowed_normalized,
+        allowed_cluster_names=allowed_cluster_names,
+    )
     fbo_orders_all, fbo_orders_meta = _aggregate_fbo_orders(user.id, date_from, date_to)
     fbo_stock_all, fbo_stock_meta = _aggregate_fbo_stock_all_warehouses(stock_rows)
-    current_stock, stock_meta = _current_stock_map(stock_rows, warehouse_name)
+    current_stock, stock_meta = _current_stock_map(stock_rows, allowed_normalized)
 
     today = local_today()
     closing_stock = dict(current_stock)
     if date_to < today:
         after_from = date_to + timedelta(days=1)
-        incoming_after, _ = _aggregate_incoming(user, warehouse_name, after_from, today)
-        outgoing_after, _ = _aggregate_outgoing(user.id, warehouse_name, after_from, today)
+        incoming_after, _ = _aggregate_incoming(user, allowed_normalized, after_from, today)
+        outgoing_after, _ = _aggregate_outgoing(
+            user.id,
+            after_from,
+            today,
+            allowed_normalized=allowed_normalized,
+            allowed_cluster_names=allowed_cluster_names,
+        )
         for key, qty in incoming_after.items():
             closing_stock[key] = closing_stock.get(key, 0) - qty
         for key, qty in outgoing_after.items():
@@ -381,10 +595,14 @@ def build_supply_planning_report(
         )
 
     rows.sort(key=lambda row: (str(row.get("name") or "").lower(), str(row.get("offer_id") or "")))
+    scope_name = scope["scope_name"]
 
     return {
         "ok": True,
-        "warehouse_name": warehouse_name,
+        "scope": scope["scope"],
+        "scope_label": scope["scope_label"],
+        "scope_name": scope_name,
+        "warehouse_name": scope_name,
         "date_from": date_from,
         "date_to": date_to,
         "rows": rows,
@@ -400,17 +618,63 @@ def build_supply_planning_report(
     }
 
 
-def list_warehouses_with_stock(user) -> list[dict]:
+def _stock_rows_for_user(user) -> list[dict]:
     rows = get_stock_report_cache(user.id)
     if rows is None and user.has_ozon_credentials():
         try:
             rows = fetch_stock_rows(user.ozon_client_id, user.ozon_api_key)
         except Exception:
             rows = None
+    return rows or []
 
+
+def list_warehouses_with_stock(user) -> list[dict]:
+    rows = _stock_rows_for_user(user)
+    if not rows:
+        return []
+    return group_warehouses(rows)
+
+
+def list_clusters_with_stock(user, stock_rows: list[dict] | None = None) -> list[dict]:
+    rows = stock_rows if stock_rows is not None else _stock_rows_for_user(user)
     if not rows:
         return []
 
-    from app.ozon.stocks import group_warehouses
+    mapping = _load_cluster_warehouse_map(user)
+    warehouse_to_cluster = mapping.get("warehouse_to_cluster") or {}
+    buckets: dict[str, dict] = {}
 
-    return group_warehouses(rows)
+    for row in rows:
+        qty = _row_quantity(row)
+        if qty <= 0:
+            continue
+        cluster_name = warehouse_to_cluster.get(normalize_warehouse_name(row.get("warehouse_name")))
+        if not cluster_name:
+            continue
+        sku = row.get("sku")
+        bucket = buckets.setdefault(
+            cluster_name,
+            {
+                "name": cluster_name,
+                "sku_count": 0,
+                "total_quantity": 0,
+                "_skus": set(),
+            },
+        )
+        if sku is not None:
+            bucket["_skus"].add(sku)
+        bucket["total_quantity"] += qty
+
+    result = []
+    for bucket in buckets.values():
+        bucket["sku_count"] = len(bucket.pop("_skus"))
+        result.append(bucket)
+    result.sort(key=lambda item: (-item["total_quantity"], item["name"].lower()))
+    return result
+
+
+def list_planning_targets(user) -> dict:
+    stock_rows = _stock_rows_for_user(user)
+    warehouses = group_warehouses(stock_rows) if stock_rows else []
+    clusters = list_clusters_with_stock(user, stock_rows)
+    return {"warehouses": warehouses, "clusters": clusters}

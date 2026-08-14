@@ -1,7 +1,7 @@
 /** Дашборд: статистика и график заказов */
 let dashboardChart = null;
 let dashboardChartPicker = null;
-let dashboardChartRequestSeq = 0;
+let dashboardChartAbortController = null;
 let dashboardDailyStats = [];
 
 function formatApiDate(date) {
@@ -94,6 +94,24 @@ function destroyDashboardChart() {
         dashboardChart.destroy();
         dashboardChart = null;
     }
+}
+
+function abortDashboardChartRequest() {
+    if (dashboardChartAbortController) {
+        dashboardChartAbortController.abort();
+        dashboardChartAbortController = null;
+    }
+}
+
+function setDashboardChartLoading(show) {
+    const loadingEl = document.getElementById("dashboard-chart-loading");
+    if (loadingEl) loadingEl.classList.toggle("d-none", !show);
+}
+
+function prepareDashboardChartReload() {
+    abortDashboardChartRequest();
+    destroyDashboardChart();
+    setDashboardChartLoading(false);
 }
 
 function formatSummaryCount(value) {
@@ -355,12 +373,17 @@ function renderDashboardChart(data) {
 }
 
 async function loadDashboardOrdersChart() {
-    const loadingEl = document.getElementById("dashboard-chart-loading");
     const period = getDashboardChartPeriod();
-    if (!period.from || !period.to) return;
+    if (!period.from || !period.to) {
+        setDashboardChartLoading(false);
+        return;
+    }
 
-    const seq = ++dashboardChartRequestSeq;
-    if (loadingEl) loadingEl.classList.remove("d-none");
+    abortDashboardChartRequest();
+    const controller = new AbortController();
+    dashboardChartAbortController = controller;
+
+    setDashboardChartLoading(true);
 
     const params = new URLSearchParams({
         from: period.from,
@@ -369,25 +392,43 @@ async function loadDashboardOrdersChart() {
         compare: isDashboardChartCompare() ? "1" : "0",
     });
 
+    const timeoutId = setTimeout(() => controller.abort(), 60000);
+
     try {
-        const res = await fetch(`/api/dashboard/orders-chart?${params}`);
+        const res = await fetch(`/api/dashboard/orders-chart?${params}`, { signal: controller.signal });
+        if (controller.signal.aborted) return;
+
         const data = await res.json();
-        if (seq !== dashboardChartRequestSeq) return;
+        if (controller.signal.aborted || dashboardChartAbortController !== controller) return;
+
         if (!data.ok) {
             destroyDashboardChart();
             renderTodaySummary(null);
             renderDashboardInsights(null);
+            if (typeof showToast === "function") {
+                showToast(data.error || "Не удалось загрузить график заказов", "danger");
+            }
             return;
         }
+
         renderTodaySummary(data.today_summary);
         renderDashboardChart(data);
         renderDashboardInsights(data);
     } catch (err) {
-        if (seq !== dashboardChartRequestSeq) return;
+        if (err.name === "AbortError") return;
+        if (dashboardChartAbortController !== controller) return;
         console.error("Orders chart:", err);
+        destroyDashboardChart();
+        renderTodaySummary(null);
+        renderDashboardInsights(null);
+        if (typeof showToast === "function") {
+            showToast("Не удалось загрузить график заказов", "danger");
+        }
     } finally {
-        if (seq === dashboardChartRequestSeq && loadingEl) {
-            loadingEl.classList.add("d-none");
+        clearTimeout(timeoutId);
+        if (dashboardChartAbortController === controller) {
+            dashboardChartAbortController = null;
+            setDashboardChartLoading(false);
         }
     }
 }
@@ -516,10 +557,16 @@ document.addEventListener("DOMContentLoaded", () => {
 
 document.addEventListener("page:loaded", (e) => {
     const path = (e.detail?.path || "").split("?")[0];
-    if (path !== "/") return;
+    if (path !== "/") {
+        abortDashboardChartRequest();
+        if (dashboardChartPicker) {
+            dashboardChartPicker.destroy();
+            dashboardChartPicker = null;
+        }
+        return;
+    }
 
-    destroyDashboardChart();
-    dashboardChartRequestSeq += 1;
+    prepareDashboardChartReload();
     if (dashboardChartPicker) {
         dashboardChartPicker.destroy();
         dashboardChartPicker = null;

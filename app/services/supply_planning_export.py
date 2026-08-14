@@ -14,9 +14,9 @@ OZON_EXPORT_HEADERS = ("артикул", "имя (необязательно)", 
 
 
 def _sanitize_warehouse_for_filename(warehouse_name: str) -> str:
-    text = str(warehouse_name or "").strip() or "склад"
+    text = str(warehouse_name or "").strip() or "поставка"
     text = re.sub(r"[^\w.\-]+", "_", text, flags=re.UNICODE)
-    return text.strip("._") or "склад"
+    return text.strip("._") or "поставка"
 
 
 def build_supply_planning_export_filename(warehouse_name: str) -> str:

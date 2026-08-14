@@ -9,26 +9,36 @@ from app.datetime_fmt import local_calendar_date, utc_bounds_for_local_dates
 from app.models import Order, Product
 from app.ozon.stocks import group_products, product_row_key
 from app.services.stock_report import get_stock_report_cache
-from app.services.supply_planning import _product_key
+from app.services.order_grouping import normalize_cluster_name, normalize_warehouse_name, product_key as _product_key
 
 TOP_PRODUCTS_LIMIT = 10
 
 
-def _order_source_name(raw: dict) -> str:
-    analytics = raw.get("analytics_data")
-    if isinstance(analytics, dict):
-        name = str(analytics.get("warehouse_name") or "").strip()
-        if name:
-            return name
+def _order_source_info(order: Order) -> tuple[str, str]:
+    """Имя для UI и ключ группировки.
+
+    FBO — склад отгрузки из analytics_data.
+    FBS — кластер из financial_data (это не расход FBO-склада).
+    """
+    raw = order.raw_data if isinstance(order.raw_data, dict) else {}
+    scheme = (order.scheme or Order.SCHEME_FBS).upper()
+
+    if scheme == Order.SCHEME_FBO:
+        analytics = raw.get("analytics_data")
+        name = ""
+        if isinstance(analytics, dict):
+            name = str(analytics.get("warehouse_name") or "").strip()
+        display = name or "Не указан"
+        group_key = f"fbo:{normalize_warehouse_name(name) or display.casefold()}"
+        return display, group_key
 
     financial = raw.get("financial_data")
+    cluster = ""
     if isinstance(financial, dict):
-        for key in ("cluster_from", "cluster_to"):
-            name = str(financial.get(key) or "").strip()
-            if name:
-                return name
-
-    return "Не указан"
+        cluster = str(financial.get("cluster_from") or financial.get("cluster_to") or "").strip()
+    display = f"{cluster} · FBS" if cluster else "Не указан · FBS"
+    group_key = f"fbs:{normalize_cluster_name(cluster) or display.casefold()}"
+    return display, group_key
 
 
 def _orders_in_period(user_id: int, date_from: date, date_to: date) -> list[Order]:
@@ -103,6 +113,8 @@ def _enrich_product_rows(user_id: int, rows: list[dict]) -> list[dict]:
 
 def build_orders_breakdown(user_id: int, date_from: date, date_to: date) -> dict:
     warehouse_totals: dict[str, int] = defaultdict(int)
+    warehouse_labels: dict[str, str] = {}
+    warehouse_schemes: dict[str, str] = {}
     product_totals: dict[str, int] = defaultdict(int)
     product_meta: dict[str, dict] = {}
 
@@ -111,8 +123,10 @@ def build_orders_breakdown(user_id: int, date_from: date, date_to: date) -> dict
         if not day or day < date_from or day > date_to:
             continue
 
-        raw = order.raw_data if isinstance(order.raw_data, dict) else {}
-        source = _order_source_name(raw)
+        display_name, group_key = _order_source_info(order)
+        scheme = (order.scheme or Order.SCHEME_FBS).upper()
+        warehouse_labels.setdefault(group_key, display_name)
+        warehouse_schemes[group_key] = scheme
 
         for item in order.products_list():
             if not isinstance(item, dict):
@@ -121,7 +135,7 @@ def build_orders_breakdown(user_id: int, date_from: date, date_to: date) -> dict
             if qty <= 0:
                 continue
 
-            warehouse_totals[source] += qty
+            warehouse_totals[group_key] += qty
 
             key = _product_key(item.get("offer_id"), item.get("sku"))
             product_totals[key] += qty
@@ -133,8 +147,12 @@ def build_orders_breakdown(user_id: int, date_from: date, date_to: date) -> dict
                 }
 
     warehouses = [
-        {"name": name, "quantity": qty}
-        for name, qty in warehouse_totals.items()
+        {
+            "name": warehouse_labels.get(group_key, group_key),
+            "quantity": qty,
+            "scheme": warehouse_schemes.get(group_key, ""),
+        }
+        for group_key, qty in warehouse_totals.items()
     ]
     warehouses.sort(key=lambda row: (-row["quantity"], row["name"].lower()))
 

@@ -21,16 +21,35 @@
     <div class="card shadow-sm mb-4">
         <div class="card-body">
             <form id="supply-planning-form" class="row g-3 align-items-end">
-                <div class="col-md-4">
-                    <label class="form-label" for="supply-planning-warehouse">Склад</label>
-                    <select class="form-select" id="supply-planning-warehouse" name="warehouse"
-                            {% if not has_ozon or not warehouses %}disabled{% endif %}>
-                        <option value="">Выберите склад</option>
-                        {% for wh in warehouses %}
-                        <option value="{{ wh.name }}" {% if selected_warehouse == wh.name %}selected{% endif %}>
-                            {{ wh.name }} ({{ wh.sku_count }} SKU)
-                        </option>
-                        {% endfor %}
+                <div class="col-md-5">
+                    <label class="form-label" for="supply-planning-target">Склад / кластер</label>
+                    <select class="form-select" id="supply-planning-target" name="target"
+                            {% if not has_ozon %}disabled{% endif %}>
+                        <option value="">Выберите склад или кластер</option>
+                        <optgroup label="Склады">
+                            <option value="all" data-scope="warehouse"
+                                    {% if selected_scope == 'warehouse' and selected_warehouse == 'all' %}selected{% endif %}>
+                                Все склады
+                            </option>
+                            {% for wh in warehouses %}
+                            <option value="{{ wh.name }}" data-scope="warehouse"
+                                    {% if selected_scope == 'warehouse' and selected_warehouse == wh.name %}selected{% endif %}>
+                                {{ wh.name }} ({{ wh.sku_count }} SKU)
+                            </option>
+                            {% endfor %}
+                        </optgroup>
+                        <optgroup label="Кластеры">
+                            <option value="all" data-scope="cluster"
+                                    {% if selected_scope == 'cluster' and selected_cluster == 'all' %}selected{% endif %}>
+                                Все кластеры
+                            </option>
+                            {% for cluster in clusters %}
+                            <option value="{{ cluster.name }}" data-scope="cluster"
+                                    {% if selected_scope == 'cluster' and selected_cluster == cluster.name %}selected{% endif %}>
+                                {{ cluster.name }} ({{ cluster.sku_count }} SKU)
+                            </option>
+                            {% endfor %}
+                        </optgroup>
                     </select>
                 </div>
                 <div class="orders-period-wrap">
@@ -49,11 +68,11 @@
                     </button>
                 </div>
             </form>
-            {% if has_ozon and not warehouses %}
+            {% if has_ozon and not warehouses and not clusters %}
             <p class="text-muted small mb-0 mt-3">
                 Список складов пуст. Загрузите
                 <a href="/reports/stock" data-nav="/reports/stock">остатки товаров</a>
-                или дождитесь регламентного задания.
+                или дождитесь регламентного задания. Пункты «Все склады» и «Все кластеры» доступны и без остатков.
             </p>
             {% endif %}
         </div>
@@ -69,8 +88,8 @@
             <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
             <div class="row g-3 text-center text-md-start flex-grow-1">
                 <div class="col-md-3">
-                    <div class="text-muted small">Склад</div>
-                    <div class="fw-semibold">{{ report.warehouse_name }}</div>
+                    <div class="text-muted small">{{ report.scope_label or 'Склад' }}</div>
+                    <div class="fw-semibold">{{ report.scope_name or report.warehouse_name }}</div>
                 </div>
                 <div class="col-md-3">
                     <div class="text-muted small">Период</div>
@@ -90,7 +109,7 @@
                 </div>
             </div>
             <div class="dropdown" id="supply-planning-export-dropdown"
-                 data-warehouse="{{ report.warehouse_name }}">
+                 data-warehouse="{{ report.scope_name or report.warehouse_name }}">
                 <button type="button"
                         class="btn supply-planning-export-btn dropdown-toggle"
                         data-bs-toggle="dropdown" data-bs-auto-close="true"
@@ -134,19 +153,20 @@
                     </th>
                     <th class="text-center supply-planning-col-header">
                         <div class="supply-planning-col-title">Остаток на начало</div>
-                        <div class="supply-planning-col-subtitle" title="{{ report.warehouse_name }}">{{ report.warehouse_name }}</div>
+                        <div class="supply-planning-col-subtitle" title="{{ report.scope_name or report.warehouse_name }}">{{ report.scope_name or report.warehouse_name }}</div>
                     </th>
                     <th class="text-center supply-planning-col-header">
                         <div class="supply-planning-col-title">Приход</div>
-                        <div class="supply-planning-col-subtitle" title="{{ report.warehouse_name }}">{{ report.warehouse_name }}</div>
+                        <div class="supply-planning-col-subtitle" title="{{ report.scope_name or report.warehouse_name }}">{{ report.scope_name or report.warehouse_name }}</div>
                     </th>
                     <th class="text-center supply-planning-col-header">
                         <div class="supply-planning-col-title">Расход</div>
-                        <div class="supply-planning-col-subtitle" title="{{ report.warehouse_name }}">{{ report.warehouse_name }}</div>
+                        <div class="supply-planning-col-subtitle" title="{{ report.scope_name or report.warehouse_name }}">{{ report.scope_name or report.warehouse_name }}</div>
+                        <div class="supply-planning-col-subtitle">FBO, доставлено</div>
                     </th>
                     <th class="text-center supply-planning-col-header">
                         <div class="supply-planning-col-title">Остаток на конец</div>
-                        <div class="supply-planning-col-subtitle" title="{{ report.warehouse_name }}">{{ report.warehouse_name }}</div>
+                        <div class="supply-planning-col-subtitle" title="{{ report.scope_name or report.warehouse_name }}">{{ report.scope_name or report.warehouse_name }}</div>
                     </th>
                     <th class="text-center supply-planning-col-header text-nowrap">Отправить</th>
                 </tr>
@@ -209,6 +229,12 @@
         </table>
     </div>
     {% elif report_requested and not report_error %}
-    <div class="alert alert-info py-2">За выбранный период нет данных по этому складу.</div>
+    <div class="alert alert-info py-2">
+        {% if (report.scope if report else selected_scope) == 'cluster' %}
+        За выбранный период нет данных по этому кластеру.
+        {% else %}
+        За выбранный период нет данных по этому складу.
+        {% endif %}
+    </div>
     {% endif %}
 </div>

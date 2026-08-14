@@ -346,10 +346,20 @@ def analytics_supply_planning():
     from datetime import timedelta
 
     from app.datetime_fmt import local_today
-    from app.services.supply_planning import build_supply_planning_report, list_warehouses_with_stock
+    from app.services.supply_planning import build_supply_planning_report, list_planning_targets
 
-    warehouses = list_warehouses_with_stock(current_user)
+    targets = list_planning_targets(current_user)
+    warehouses = targets.get("warehouses") or []
+    clusters = targets.get("clusters") or []
     warehouse_name = (request.args.get("warehouse") or "").strip()
+    cluster_name = (request.args.get("cluster") or "").strip()
+    scope = (request.args.get("scope") or "").strip()
+    if not scope:
+        scope = "cluster" if cluster_name else ("warehouse" if warehouse_name else "")
+    if scope == "cluster":
+        warehouse_name = ""
+    else:
+        cluster_name = ""
     date_from = _parse_date_param(request.args.get("from"))
     date_to = _parse_date_param(request.args.get("to"))
 
@@ -360,12 +370,18 @@ def analytics_supply_planning():
 
     report = None
     report_error = None
-    if warehouse_name and request.args.get("from") and request.args.get("to"):
+    report_requested = bool(
+        (warehouse_name or cluster_name)
+        and request.args.get("from")
+        and request.args.get("to")
+    )
+    if report_requested:
         result = build_supply_planning_report(
             current_user,
-            warehouse_name,
             date_from,
             date_to,
+            warehouse_name=warehouse_name or None,
+            cluster_name=cluster_name or None,
         )
         if result.get("ok"):
             report = result
@@ -375,13 +391,16 @@ def analytics_supply_planning():
     return _render_page(
         "/analytics/supply-planning",
         warehouses=warehouses,
+        clusters=clusters,
+        selected_scope=scope,
         selected_warehouse=warehouse_name,
+        selected_cluster=cluster_name,
         date_from=date_from,
         date_to=date_to,
         report=report,
         report_error=report_error,
         has_ozon=current_user.has_ozon_credentials(),
-        report_requested=bool(warehouse_name and request.args.get("from") and request.args.get("to")),
+        report_requested=report_requested,
     )
 
 

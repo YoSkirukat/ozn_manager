@@ -22,15 +22,36 @@ function formatApiDate(date) {
 function getSupplyPlanningUrlParams() {
     const params = new URLSearchParams(window.location.search);
     return {
+        scope: params.get("scope") || "",
         warehouse: params.get("warehouse") || "",
+        cluster: params.get("cluster") || "",
         from: params.get("from"),
         to: params.get("to"),
     };
 }
 
-function buildSupplyPlanningPageUrl(warehouse, from, to) {
+function getSelectedPlanningTarget() {
+    const select = document.getElementById("supply-planning-target")
+        || document.getElementById("supply-planning-warehouse");
+    const option = select?.selectedOptions?.[0];
+    if (!option || !String(option.value || "").trim()) {
+        return { scope: "", name: "" };
+    }
+    return {
+        scope: option.dataset.scope || "warehouse",
+        name: String(option.value || "").trim(),
+    };
+}
+
+function buildSupplyPlanningPageUrl(scope, name, from, to) {
     const params = new URLSearchParams();
-    if (warehouse) params.set("warehouse", warehouse);
+    if (scope === "cluster" && name) {
+        params.set("scope", "cluster");
+        params.set("cluster", name);
+    } else if (name) {
+        params.set("scope", "warehouse");
+        params.set("warehouse", name);
+    }
     if (from) params.set("from", from);
     if (to) params.set("to", to);
     const query = params.toString();
@@ -104,15 +125,14 @@ function bindSupplyPlanningForm() {
 
     form.addEventListener("submit", (event) => {
         event.preventDefault();
-        const warehouseEl = document.getElementById("supply-planning-warehouse");
-        const warehouse = warehouseEl ? warehouseEl.value.trim() : "";
+        const target = getSelectedPlanningTarget();
         const period = getSupplyPlanningPeriod();
         const spinner = document.getElementById("supply-planning-spinner");
         const submitBtn = document.getElementById("btn-supply-planning-submit");
 
-        if (!warehouse) {
+        if (!target.scope || !target.name) {
             if (typeof showToast === "function") {
-                showToast("Выберите склад.", "warning");
+                showToast("Выберите склад или кластер.", "warning");
             }
             return;
         }
@@ -126,7 +146,7 @@ function bindSupplyPlanningForm() {
         if (spinner) spinner.classList.remove("d-none");
         if (submitBtn) submitBtn.disabled = true;
 
-        const url = buildSupplyPlanningPageUrl(warehouse, period.from, period.to);
+        const url = buildSupplyPlanningPageUrl(target.scope, target.name, period.from, period.to);
         if (typeof loadPage === "function") {
             loadPage(url).finally(() => {
                 if (spinner) spinner.classList.add("d-none");
@@ -203,9 +223,9 @@ async function exportSupplyPlanningSend(exportType) {
     const toggleBtn = dropdown?.querySelector(".supply-planning-export-btn");
     if (toggleBtn) toggleBtn.disabled = true;
 
-    const warehouseEl = document.getElementById("supply-planning-warehouse");
+    const target = getSelectedPlanningTarget();
     const warehouse = (
-        (warehouseEl && warehouseEl.value.trim())
+        target.name
         || (dropdown && dropdown.dataset.warehouse)
         || ""
     ).trim();
@@ -274,7 +294,8 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 document.addEventListener("page:loaded", (event) => {
-    if (event.detail?.path === "/analytics/supply-planning") {
+    const path = (event.detail?.path || "").split("?")[0];
+    if (path === "/analytics/supply-planning") {
         initSupplyPlanningPage();
     }
 });
