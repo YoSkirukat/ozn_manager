@@ -19,6 +19,7 @@ from app.services.order_details import (
     _product_lookup,
     _product_rows,
     attach_order_margins,
+    load_batch_accruals,
 )
 from app.services.order_returns import build_post_delivery_return_postings, order_has_financial_refund
 
@@ -279,7 +280,13 @@ def export_orders_excel(
     if export_type == "1c":
         # Для 1С лучше сразу гарантировать наличие `_total_accrued` в `raw_data`,
         # иначе придётся падать на "выручку" (sale_amount), что неверно для "Начислено".
-        attach_order_margins(orders, user, use_transactions=True)
+        accruals_lookup = load_batch_accruals(user, orders)
+        attach_order_margins(
+            orders,
+            user,
+            use_transactions=True,
+            accruals_lookup=accruals_lookup,
+        )
         rows = build_onec_export_rows(orders, user)
         content = build_xlsx(ONEC_HEADERS, rows)
         filename = f"orders_1c_{period}.xlsx"

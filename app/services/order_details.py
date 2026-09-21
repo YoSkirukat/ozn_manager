@@ -8,10 +8,10 @@ from app.extensions import db
 from app.models import ORDER_STATUS_DELIVERED, ORDER_STATUS_LABELS, Product
 from app.ozon.client import _post
 from app.ozon.finance import (
-    fetch_posting_transactions,
-    is_acquiring_operation,
-    service_label,
+    PostingAccruals,
     _parse_operation_date,
+    accrual_amount,
+    load_posting_accruals,
 )
 from app.services.order_buyout import (
     BUYOUT_RAW_CACHE_KEYS,
@@ -274,28 +274,39 @@ def _cached_total_accrued(raw: dict | None) -> float | None:
         return None
 
 
-FINANCIAL_RAW_CACHE_KEYS = ("_total_accrued", "_margin", "_accruals", "_accruals_version", "_financial_refund")
+FINANCIAL_RAW_CACHE_KEYS = (
+    "_total_accrued",
+    "_margin",
+    "_accruals",
+    "_accruals_version",
+    "_accruals_source",
+    "_financial_refund",
+)
 PROMOTION_RAW_CACHE_KEYS = ("_product_promotions",)
 
-ACCRUALS_CACHE_VERSION = 2
+# v3: строки начислений строятся из /v1/finance/accrual/postings.
+# v2 хранил неполные строки, полученные из устаревшего /v3/finance/transaction/list,
+# поэтому такие кэши перестаём доверять и пересчитываем.
+ACCRUALS_CACHE_VERSION = 3
+
+ACCRUALS_SOURCE_API = "accruals"
+ACCRUALS_SOURCE_FINANCIAL = "financial"
+ACCRUALS_SOURCE_CACHE = "cache"
 
 
 def _accrual_rows_look_incomplete(rows: list[dict]) -> bool:
-    """Только логистика без выручки/комиссии — начисления ещё не полные в Ozon."""
+    """Кроме выручки нет ни одного начисления — в Ozon данные ещё не полные."""
     if not rows:
         return True
-    has_revenue = False
-    has_commission = False
     for row in rows:
-        if row.get("type") != "group":
-            continue
-        for item in row.get("items") or []:
+        items = row.get("items") if row.get("type") == "group" else [row]
+        for item in items or []:
+            if not isinstance(item, dict):
+                continue
             label = str(item.get("label") or "")
-            if label == "Выручка":
-                has_revenue = True
-            elif label == "Вознаграждение Ozon":
-                has_commission = True
-    return not has_revenue and not has_commission
+            if label and label != "Выручка":
+                return False
+    return True
 
 
 def _financial_cache_usable(raw: dict | None) -> bool:
@@ -341,8 +352,15 @@ def _cached_margin(raw: dict | None) -> float | None:
         return None
 
 
-def _persist_financial_cache(order, accruals: list[dict], total_accrued: float) -> None:
-    if _accrual_rows_look_incomplete(accruals):
+def _persist_financial_cache(
+    order,
+    accruals: list[dict],
+    total_accrued: float,
+    *,
+    source: str,
+) -> None:
+    """Кэшируем только строки из API начислений: данные из financial_data неполные."""
+    if source != ACCRUALS_SOURCE_API or _accrual_rows_look_incomplete(accruals):
         return
     _persist_total_accrued_cache(order, total_accrued)
     _persist_accruals_cache(order, accruals)
@@ -393,6 +411,7 @@ def _persist_accruals_cache(order, accruals: list[dict]) -> None:
         **raw,
         "_accruals": accruals,
         "_accruals_version": ACCRUALS_CACHE_VERSION,
+        "_accruals_source": ACCRUALS_SOURCE_API,
     }
 
 
@@ -411,37 +430,44 @@ def _persist_margin_cache(order, margin: float | None) -> None:
     order.raw_data = {**raw, "_margin": normalized}
 
 
-def resolve_total_accrued(order, raw: dict, *, user=None, use_transactions: bool = True) -> float:
-    """Итого начислено: из кэша в raw_data или из API транзакций (как в модалке)."""
+def resolve_total_accrued(
+    order,
+    raw: dict,
+    *,
+    user=None,
+    use_transactions: bool = True,
+    accruals_lookup: PostingAccruals | None = None,
+) -> float:
+    """Итого начислено: из кэша в raw_data или из API начислений (как в модалке)."""
     cached = _cached_total_accrued(raw)
     if cached is not None:
         if use_transactions and _cached_accruals(raw) is None:
             user = user or order.user
             if user and user.has_ozon_credentials():
-                accruals, total_accrued = _accrual_rows(
+                accruals, total_accrued, source = _accrual_rows(
                     raw,
                     _decimal(order.total),
                     user=user,
                     posting_number=order.ozon_order_id,
-                    order_date=order.order_date,
                     use_transactions=True,
+                    accruals_lookup=accruals_lookup,
                 )
-                _persist_financial_cache(order, accruals, total_accrued)
+                _persist_financial_cache(order, accruals, total_accrued, source=source)
                 if total_accrued != cached:
                     return total_accrued
         return cached
 
     user = user or order.user
-    accruals, total_accrued = _accrual_rows(
+    accruals, total_accrued, source = _accrual_rows(
         raw,
         _decimal(order.total),
         user=user,
         posting_number=order.ozon_order_id,
-        order_date=order.order_date,
         use_transactions=use_transactions,
+        accruals_lookup=accruals_lookup,
     )
     if use_transactions and user and user.has_ozon_credentials():
-        _persist_financial_cache(order, accruals, total_accrued)
+        _persist_financial_cache(order, accruals, total_accrued, source=source)
     return total_accrued
 
 
@@ -452,6 +478,7 @@ def compute_order_margin(
     use_transactions: bool = True,
     product_lookup: dict[str, Product] | None = None,
     buyout_index: dict[str, list[dict]] | None = None,
+    accruals_lookup: PostingAccruals | None = None,
 ) -> float | None:
     if order.status != ORDER_STATUS_DELIVERED:
         return None
@@ -490,6 +517,7 @@ def compute_order_margin(
             raw,
             user=user,
             use_transactions=use_transactions,
+            accruals_lookup=accruals_lookup,
         )
     products = _apply_product_margins(
         products,
@@ -508,7 +536,34 @@ def compute_order_margin(
     return margin
 
 
-def attach_order_margins(orders: list, user, *, use_transactions: bool = False) -> None:
+def load_batch_accruals(user, orders: list) -> PostingAccruals | None:
+    """Начисления Ozon на пачку доставленных заказов: до 200 отправлений в одном запросе."""
+    if not user or not user.has_ozon_credentials():
+        return None
+
+    posting_numbers = [
+        order.ozon_order_id
+        for order in orders
+        if order.status == ORDER_STATUS_DELIVERED
+        and order.ozon_order_id
+        and not order.is_international()
+    ]
+    if not posting_numbers:
+        return None
+    return load_posting_accruals(
+        user.ozon_client_id,
+        user.ozon_api_key,
+        posting_numbers,
+    )
+
+
+def attach_order_margins(
+    orders: list,
+    user,
+    *,
+    use_transactions: bool = False,
+    accruals_lookup: PostingAccruals | None = None,
+) -> None:
     """Маржа для списка: из кэша в raw_data, без внешних API при просмотре."""
     if not orders:
         return
@@ -545,6 +600,7 @@ def attach_order_margins(orders: list, user, *, use_transactions: bool = False) 
                 use_transactions=use_transactions,
                 product_lookup=product_lookup,
                 buyout_index=buyout_index,
+                accruals_lookup=accruals_lookup,
             )
             raw_after = order.raw_data if isinstance(order.raw_data, dict) else {}
             cached_after = _cached_total_accrued(raw_after)
@@ -561,102 +617,92 @@ def attach_order_margins(orders: list, user, *, use_transactions: bool = False) 
         db.session.rollback()
 
 
-def _detail_items_from_operation(op: dict) -> list[dict]:
-    items = []
-    revenue = _decimal(op.get("accruals_for_sale"))
+def _seller_price_revenue(accruals: list[dict]) -> Decimal | None:
+    """Выручка по начислениям Ozon: сумма seller_price × quantity.
+
+    Стоимость продажи Ozon прикладывает к начислению «Вознаграждение за продажу»,
+    а при возврате отдаёт её с отрицательным seller_price — сумма сходится в ноль.
+    None означает, что стоимость продажи в ответе отсутствует.
+    """
+    total: Decimal | None = None
+    for accrual in accruals:
+        price = accrual.get("seller_price")
+        if not isinstance(price, dict):
+            continue
+        quantity = _decimal(accrual.get("quantity") or 1)
+        total = (total or Decimal(0)) + _decimal(price.get("amount")) * quantity
+    return total
+
+
+def _financial_revenue(raw: dict) -> Decimal:
+    total = Decimal(0)
+    for fin in _financial_products(raw):
+        total += _decimal(fin.get("price") or 0) * _decimal(fin.get("quantity") or 1)
+    return total
+
+
+def _accrual_rows_from_accruals(
+    raw: dict,
+    accruals: list[dict],
+    bundle: PostingAccruals,
+) -> tuple[list[dict], float]:
+    """Строки начислений как в кабинете Ozon: выручка и начисления по типам."""
+    seller_revenue = _seller_price_revenue(accruals)
+    revenue = seller_revenue if seller_revenue is not None else _financial_revenue(raw)
+
+    grouped: dict[tuple, Decimal] = {}
+    order: list[tuple] = []
+    dates: list[str] = []
+    revenue_dates: list[str] = []
+    reversal_keys: set[tuple] = set()
+    for accrual in accruals:
+        date = str(accrual.get("accrual_date") or "")
+        if date:
+            dates.append(date)
+            if isinstance(accrual.get("seller_price"), dict):
+                revenue_dates.append(date)
+        key = (accrual.get("type_id"), date)
+        if key not in grouped:
+            grouped[key] = Decimal(0)
+            order.append(key)
+        grouped[key] += accrual_amount(accrual)
+        seller_price = accrual.get("seller_price")
+        if isinstance(seller_price, dict) and _decimal(seller_price.get("amount")) < 0:
+            # Сторно продажи: Ozon отдаёт стоимость возврата с минусом.
+            reversal_keys.add(key)
+
+    rows: list[dict] = []
     if revenue != 0:
-        items.append(
+        rows.append(
             {
+                "type": "row",
                 "label": "Выручка",
+                "date": _parse_operation_date(
+                    min(revenue_dates) if revenue_dates else (min(dates) if dates else "")
+                ),
                 "amount": _money(abs(revenue)),
                 "negative": revenue < 0,
             }
         )
 
-    commission = _decimal(op.get("sale_commission"))
-    if commission != 0:
-        items.append(
-            {
-                "label": "Вознаграждение Ozon",
-                "amount": _money(abs(commission)),
-                "negative": commission < 0,
-            }
-        )
-
-    for svc in op.get("services") or []:
-        if not isinstance(svc, dict):
-            continue
-        code = str(svc.get("name") or "")
-        if "Acquiring" in code:
-            continue
-        price = _decimal(svc.get("price"))
-        if price == 0:
-            continue
-        items.append(
-            {
-                "label": service_label(code),
-                "amount": _money(abs(price)),
-                "negative": price < 0,
-            }
-        )
-    return items
-
-
-def _accrual_rows_from_operations(operations: list[dict]) -> tuple[list[dict], float]:
-    rows = []
-    total = Decimal(0)
-
-    for op in operations:
-        amount = _decimal(op.get("amount"))
-        total += amount
-
-    order_ops = [op for op in operations if not is_acquiring_operation(op)]
-    acquiring_ops = [op for op in operations if is_acquiring_operation(op)]
-
-    for op in order_ops:
-        detail = _detail_items_from_operation(op)
-        op_amount = _decimal(op.get("amount"))
-        if not detail:
-            if op_amount == 0:
-                continue
-            rows.append(
-                {
-                    "type": "row",
-                    "label": str(op.get("operation_type_name") or "Операция"),
-                    "date": _parse_operation_date(op.get("operation_date")),
-                    "amount": _money(abs(op_amount)),
-                    "negative": op_amount < 0,
-                }
-            )
-            continue
-        rows.append(
-            {
-                "type": "group",
-                "label": "Комиссии Ozon",
-                "date": _parse_operation_date(op.get("operation_date")),
-                "amount": _money(abs(op_amount)),
-                "negative": op_amount < 0,
-                "expanded": True,
-                "items": detail,
-            }
-        )
-
-    for op in acquiring_ops:
-        amount = _decimal(op.get("amount"))
+    accruals_total = Decimal(0)
+    for key in order:
+        amount = grouped[key]
+        accruals_total += amount
         if amount == 0:
             continue
-        label = str(op.get("operation_type_name") or "Оплата эквайринга")
-        rows.append(
-            {
-                "type": "row",
-                "label": label,
-                "date": _parse_operation_date(op.get("operation_date")),
-                "amount": _money(abs(amount)),
-                "negative": amount < 0,
-            }
-        )
+        row = {
+            "type": "row",
+            "label": bundle.label(key[0]),
+            "date": _parse_operation_date(key[1]),
+            "amount": _money(abs(amount)),
+            "negative": amount < 0,
+        }
+        if key in reversal_keys:
+            row["reversal"] = True
+        rows.append(row)
 
-    return rows, _money(total)
+    return rows, _money(revenue + accruals_total)
 
 
 def _accrual_rows_fallback(raw: dict, order_total: Decimal) -> tuple[list[dict], float]:
@@ -711,27 +757,33 @@ def _accrual_rows(
     *,
     user,
     posting_number: str,
-    order_date,
     use_transactions: bool = True,
-) -> tuple[list[dict], float]:
+    accruals_lookup: PostingAccruals | None = None,
+) -> tuple[list[dict], float, str]:
+    """Строки начислений, итог и источник: API начислений, кэш или financial_data."""
     if not use_transactions:
         cached_accruals = _cached_accruals(raw)
         cached_total = _cached_total_accrued(raw)
         if cached_accruals is not None and cached_total is not None:
-            return cached_accruals, cached_total
-        return _accrual_rows_fallback(raw, order_total)
+            return cached_accruals, cached_total, ACCRUALS_SOURCE_CACHE
+        rows, total = _accrual_rows_fallback(raw, order_total)
+        return rows, total, ACCRUALS_SOURCE_FINANCIAL
 
-    if user and user.has_ozon_credentials() and posting_number and order_date:
-        operations = fetch_posting_transactions(
-            user.ozon_client_id,
-            user.ozon_api_key,
-            posting_number,
-            order_date,
-        )
-        if operations:
-            return _accrual_rows_from_operations(operations)
+    if user and user.has_ozon_credentials() and posting_number:
+        bundle = accruals_lookup
+        if bundle is None:
+            bundle = load_posting_accruals(
+                user.ozon_client_id,
+                user.ozon_api_key,
+                [posting_number],
+            )
+        accruals = bundle.accruals(posting_number)
+        if accruals:
+            rows, total = _accrual_rows_from_accruals(raw, accruals, bundle)
+            return rows, total, ACCRUALS_SOURCE_API
 
-    return _accrual_rows_fallback(raw, order_total)
+    rows, total = _accrual_rows_fallback(raw, order_total)
+    return rows, total, ACCRUALS_SOURCE_FINANCIAL
 
 
 def _cluster_info(raw: dict) -> dict:
@@ -752,6 +804,7 @@ def build_order_detail(
     *,
     user=None,
     use_live_financials: bool = True,
+    accruals_lookup: PostingAccruals | None = None,
 ) -> dict:
     raw = raw if isinstance(raw, dict) else (order.raw_data if isinstance(order.raw_data, dict) else {})
     order_date = format_datetime(order.order_date)
@@ -800,20 +853,25 @@ def build_order_detail(
         if use_live_financials and buyout_total:
             _persist_margin_cache(order, _sum_order_margin(products) if calculate_margin else None)
     else:
-        accruals, total_accrued = _accrual_rows(
+        accruals, total_accrued, accruals_source = _accrual_rows(
             raw,
             _decimal(order.total),
             user=user,
             posting_number=order.ozon_order_id,
-            order_date=order.order_date,
             use_transactions=use_transactions,
+            accruals_lookup=accruals_lookup,
         )
         if not use_transactions:
             cached_accrued = _cached_total_accrued(raw)
             if cached_accrued is not None:
                 total_accrued = cached_accrued
         elif user and user.has_ozon_credentials():
-            _persist_financial_cache(order, accruals, total_accrued)
+            _persist_financial_cache(
+                order,
+                accruals,
+                total_accrued,
+                source=accruals_source,
+            )
         products = _apply_product_margins(
             products,
             total_accrued,

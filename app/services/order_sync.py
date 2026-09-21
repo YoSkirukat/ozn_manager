@@ -11,6 +11,7 @@ from app.services.order_details import (
     _cached_margin,
     clear_financial_cache,
     compute_order_margin,
+    load_batch_accruals,
     merge_order_raw_data,
     resolve_total_accrued,
 )
@@ -32,6 +33,7 @@ def _refresh_orders_financials_batch(user, orders: list[Order]) -> dict:
     product_lookup = _product_lookup(user.id)
     updated = 0
     buyout_index = build_buyout_index_for_orders(user, orders)
+    accruals_lookup = load_batch_accruals(user, orders)
 
     with db.session.no_autoflush:
         for index, order in enumerate(orders, start=1):
@@ -43,13 +45,20 @@ def _refresh_orders_financials_batch(user, orders: list[Order]) -> dict:
                 clear_buyout_cache(order)
             raw = order.raw_data if isinstance(order.raw_data, dict) else before_raw
             if not order.is_international():
-                resolve_total_accrued(order, raw, user=user, use_transactions=True)
+                resolve_total_accrued(
+                    order,
+                    raw,
+                    user=user,
+                    use_transactions=True,
+                    accruals_lookup=accruals_lookup,
+                )
             compute_order_margin(
                 order,
                 user=user,
                 use_transactions=True,
                 product_lookup=product_lookup,
                 buyout_index=buyout_index,
+                accruals_lookup=accruals_lookup,
             )
             after_raw = order.raw_data if isinstance(order.raw_data, dict) else {}
             if after_raw != before_raw:

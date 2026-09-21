@@ -1,33 +1,35 @@
 """Финансовые операции Ozon Seller API."""
 
-import calendar
-from datetime import date, datetime, timedelta
+from __future__ import annotations
+
+import logging
+import re
+from dataclasses import dataclass
+from datetime import datetime
 from decimal import Decimal
+from threading import Lock
+from time import monotonic
 
 from app.ozon.client import _post
 
-SERVICE_LABELS = {
-    "MarketplaceServiceItemDirectFlowLogistic": "Услуги доставки",
-    "MarketplaceServiceItemReturnFlowLogistic": "Услуги доставки",
-    "MarketplaceServiceItemRedistributionLastMileCourier": "Доставка до места выдачи партнёрами",
-    "MarketplaceServiceItemDelivToCustomer": "Доставка покупателю",
-    "MarketplaceServiceItemDropoff": "Обработка отправления",
-    "MarketplaceServiceItemPickup": "Обработка отправления",
-    "ItemAgentServiceStarsMembership": "Звёздные товары",
-    "MarketplaceAgencyFeeAggregator3plRFBS": (
-        "Агентское вознаграждение за доставку Партнёрами Ozon на схеме realFBS"
-    ),
-    "MarketplaceServiceRedistributionOfDeliveryServicesRFBS": (
-        "Услуги доставки Партнёрами Ozon на схеме realFBS"
-    ),
-    "MarketplaceSellerReexposureDeliveryReturnOperation": "Перечисление за доставку от покупателя",
-}
+logger = logging.getLogger(__name__)
 
+# Начисления по отправлениям берём из нового финансового API.
+# POST /v3/finance/transaction/list Ozon пометил как устаревший: он отвечает
+# 400 «obsolete method cannot be used» и больше не отдаёт операции по отправлению,
+# из-за чего в модалке заказа оставались только выручка и вознаграждение.
+ACCRUAL_POSTINGS_PATH = "/v1/finance/accrual/postings"
+ACCRUAL_TYPES_PATH = "/v1/finance/accrual/types"
 
-def service_label(code: str) -> str:
-    if not code:
-        return "Услуга"
-    return SERVICE_LABELS.get(code, code)
+# Ozon принимает от 1 до 200 номеров отправлений в одном запросе.
+ACCRUAL_POSTINGS_BATCH_SIZE = 200
+# Номера вида `12345678-0001-1`: усечённые и служебные Ozon отклоняет с ошибкой валидации.
+POSTING_NUMBER_RE = re.compile(r"^\d{1,32}-\d{1,32}-\d{1,32}$")
+
+ACCRUAL_TYPES_TTL_SECONDS = 6 * 60 * 60
+
+_accrual_types_lock = Lock()
+_accrual_types_cache: dict[str, tuple[float, dict[int, str]]] = {}
 
 
 def related_posting_numbers(posting_number: str) -> list[str]:
@@ -59,33 +61,6 @@ def _parse_operation_date(value: str | None) -> str:
     return str(value)[:10]
 
 
-def _order_calendar_date(order_date) -> date:
-    if isinstance(order_date, date) and not isinstance(order_date, datetime):
-        return order_date
-    if hasattr(order_date, "date"):
-        return order_date.date()
-    return date.today()
-
-
-def _month_bounds(year: int, month: int) -> tuple[str, str]:
-    last_day = calendar.monthrange(year, month)[1]
-    return (
-        f"{year:04d}-{month:02d}-01T00:00:00.000Z",
-        f"{year:04d}-{month:02d}-{last_day:02d}T23:59:59.999Z",
-    )
-
-
-def _search_windows(order_date) -> list[tuple[str, str]]:
-    """Календарные месяцы для поиска: Ozon API допускает не больше одного месяца."""
-    center = _order_calendar_date(order_date)
-    windows = [_month_bounds(center.year, center.month)]
-    if center.month == 12:
-        windows.append(_month_bounds(center.year + 1, 1))
-    else:
-        windows.append(_month_bounds(center.year, center.month + 1))
-    return windows
-
-
 def _decimal(value) -> Decimal:
     try:
         return Decimal(str(value or 0))
@@ -93,139 +68,130 @@ def _decimal(value) -> Decimal:
         return Decimal(0)
 
 
-def _operation_score(op: dict) -> float:
-    score = 0.0
-    if _decimal(op.get("accruals_for_sale")):
-        score += 1000
-    if _decimal(op.get("sale_commission")):
-        score += 1000
-    score += len(op.get("services") or []) * 10
-    score += float(abs(_decimal(op.get("amount"))))
-    return score
+def accrual_amount(accrual: dict) -> Decimal:
+    """Сумма начисления (Ozon отдаёт её в поле `accrued.amount`)."""
+    if not isinstance(accrual, dict):
+        return Decimal(0)
+    accrued = accrual.get("accrued")
+    if isinstance(accrued, dict):
+        return _decimal(accrued.get("amount"))
+    return _decimal(accrual.get("amount"))
 
 
-def _merge_operations(operations: list[dict]) -> list[dict]:
-    merged: dict[int, dict] = {}
-    for op in operations:
-        if not isinstance(op, dict):
+def fetch_accrual_types(client_id: str, api_key: str) -> dict[int, str]:
+    """Справочник типов начислений Ozon: id → название (как в кабинете продавца)."""
+    key = str(client_id or "")
+    now = monotonic()
+    with _accrual_types_lock:
+        cached = _accrual_types_cache.get(key)
+    if cached and now - cached[0] < ACCRUAL_TYPES_TTL_SECONDS:
+        return cached[1]
+
+    try:
+        data = _post(client_id, api_key, ACCRUAL_TYPES_PATH, {})
+    except Exception:
+        logger.warning(
+            "Не удалось получить справочник типов начислений Ozon", exc_info=True
+        )
+        return dict(cached[1]) if cached else {}
+
+    types: dict[int, str] = {}
+    for item in data.get("accrual_types") or []:
+        if not isinstance(item, dict):
             continue
-        op_id = op.get("operation_id")
-        key = op_id if op_id is not None else id(op)
-        prev = merged.get(key)
-        if prev is None or _operation_score(op) > _operation_score(prev):
-            merged[key] = op
-    return list(merged.values())
-
-
-def _matches_posting(op: dict, allowed_postings: set[str]) -> bool:
-    posting = op.get("posting") if isinstance(op.get("posting"), dict) else {}
-    op_posting = str(posting.get("posting_number") or "")
-    return bool(op_posting) and op_posting in allowed_postings
-
-
-def _fetch_transactions_window(
-    client_id: str,
-    api_key: str,
-    start: str,
-    end: str,
-    *,
-    posting_number: str | None = None,
-) -> list[dict]:
-    operations: list[dict] = []
-    page = 1
-    while True:
-        filter_body = {
-            "date": {"from": start, "to": end},
-            "transaction_type": "all",
-        }
-        if posting_number:
-            filter_body["posting_number"] = posting_number
         try:
-            data = _post(
-                client_id,
-                api_key,
-                "/v3/finance/transaction/list",
-                {
-                    "filter": filter_body,
-                    "page": page,
-                    "page_size": 1000,
-                },
-            )
-        except Exception:
-            break
-        result = data.get("result") or {}
-        batch = result.get("operations") or []
-        operations.extend(op for op in batch if isinstance(op, dict))
-        page_count = int(result.get("page_count") or 1)
-        if page >= page_count:
-            break
-        page += 1
-    return operations
-
-
-def _is_partial_delivery_operation(op: dict) -> bool:
-    """Ozon иногда отдаёт урезанную операцию доставки только с логистикой."""
-    if is_acquiring_operation(op):
-        return False
-    op_type = str(op.get("operation_type") or "")
-    if "Delivered" not in op_type and "Delivery" not in op_type:
-        return False
-    if _decimal(op.get("accruals_for_sale")) or _decimal(op.get("sale_commission")):
-        return False
-    amount = abs(_decimal(op.get("amount")))
-    services = [s for s in (op.get("services") or []) if isinstance(s, dict)]
-    if not services or amount == 0:
-        return False
-    services_sum = sum(abs(_decimal(s.get("price"))) for s in services)
-    return amount <= services_sum + Decimal("0.01")
-
-
-def _needs_broad_fetch(operations: list[dict]) -> bool:
-    if not operations:
-        return True
-    return any(_is_partial_delivery_operation(op) for op in operations)
-
-
-def operations_look_complete(operations: list[dict]) -> bool:
-    """Основные начисления (выручка/комиссия) уже есть в ответе Ozon."""
-    if not operations or _needs_broad_fetch(operations):
-        return False
-    for op in operations:
-        if is_acquiring_operation(op):
+            type_id = int(item.get("id"))
+        except (TypeError, ValueError):
             continue
-        if _decimal(op.get("accruals_for_sale")) or _decimal(op.get("sale_commission")):
-            return True
-    return False
+        label = str(item.get("description") or item.get("name") or "").strip()
+        if label:
+            types[type_id] = label
+
+    with _accrual_types_lock:
+        _accrual_types_cache[key] = (monotonic(), types)
+    return types
 
 
-def fetch_posting_transactions(
+@dataclass(frozen=True)
+class PostingAccruals:
+    """Начисления по отправлениям и справочник типов для подписей строк."""
+
+    by_posting: dict[str, list[dict]]
+    types: dict[int, str]
+
+    def accruals(self, posting_number: str) -> list[dict]:
+        return self.by_posting.get(str(posting_number or "")) or []
+
+    def label(self, type_id) -> str:
+        try:
+            key = int(type_id)
+        except (TypeError, ValueError):
+            return f"Начисление {type_id}"
+        return self.types.get(key) or f"Начисление {key}"
+
+
+def _accruals_from_response(data: dict) -> dict[str, list[dict]]:
+    result: dict[str, list[dict]] = {}
+    for item in data.get("posting_accruals") or []:
+        if not isinstance(item, dict):
+            continue
+        number = str(item.get("posting_number") or "").strip()
+        if not number:
+            continue
+        result[number] = [a for a in (item.get("accruals") or []) if isinstance(a, dict)]
+    return result
+
+
+def _fetch_accrual_postings_chunk(
     client_id: str,
     api_key: str,
-    posting_number: str,
-    order_date,
-) -> list[dict]:
-    """Операции по отправлению из /v3/finance/transaction/list."""
-    if not order_date or not posting_number:
-        return []
-
-    allowed_postings = set(related_posting_numbers(posting_number))
-    collected: list[dict] = []
-
-    for start, end in _search_windows(order_date):
-        window_ops: list[dict] = []
-        for pn in allowed_postings:
-            window_ops.extend(
-                _fetch_transactions_window(client_id, api_key, start, end, posting_number=pn)
+    posting_numbers: list[str],
+) -> dict[str, list[dict]]:
+    try:
+        data = _post(
+            client_id,
+            api_key,
+            ACCRUAL_POSTINGS_PATH,
+            {"posting_numbers": posting_numbers},
+        )
+    except Exception:
+        if len(posting_numbers) > 1:
+            # Один отклонённый номер не должен обнулять начисления всего батча.
+            logger.warning(
+                "Ozon отклонил батч начислений (%s отправлений), пробуем по одному",
+                len(posting_numbers),
+                exc_info=True,
             )
+            merged: dict[str, list[dict]] = {}
+            for number in posting_numbers:
+                merged.update(_fetch_accrual_postings_chunk(client_id, api_key, [number]))
+            return merged
+        logger.warning(
+            "Нет начислений Ozon по отправлению %s", posting_numbers[0], exc_info=True
+        )
+        return {}
+    return _accruals_from_response(data)
 
-        filtered = [op for op in window_ops if _matches_posting(op, allowed_postings)]
-        if _needs_broad_fetch(filtered):
-            broad_ops = _fetch_transactions_window(client_id, api_key, start, end)
-            filtered = [op for op in broad_ops if _matches_posting(op, allowed_postings)]
 
-        collected.extend(filtered)
+def load_posting_accruals(client_id: str, api_key: str, posting_numbers) -> PostingAccruals:
+    """Начисления по отправлениям из /v1/finance/accrual/postings (батчами до 200)."""
+    numbers: list[str] = []
+    seen: set[str] = set()
+    for raw in posting_numbers or []:
+        number = str(raw or "").strip()
+        if not number or number in seen or not POSTING_NUMBER_RE.match(number):
+            continue
+        seen.add(number)
+        numbers.append(number)
 
-    return _merge_operations(collected)
+    by_posting: dict[str, list[dict]] = {}
+    for start in range(0, len(numbers), ACCRUAL_POSTINGS_BATCH_SIZE):
+        chunk = numbers[start : start + ACCRUAL_POSTINGS_BATCH_SIZE]
+        by_posting.update(_fetch_accrual_postings_chunk(client_id, api_key, chunk))
+
+    if not client_id or not api_key:
+        return PostingAccruals(by_posting=by_posting, types={})
+    return PostingAccruals(by_posting=by_posting, types=fetch_accrual_types(client_id, api_key))
 
 
 def is_acquiring_operation(op: dict) -> bool:

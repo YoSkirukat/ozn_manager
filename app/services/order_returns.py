@@ -26,7 +26,7 @@ def is_post_delivery_return(item: dict) -> bool:
 
 
 def accruals_have_revenue_reversal(accruals: list | None) -> bool:
-    """Сторно выручки в кэше начислений (отрицательная строка «Выручка»)."""
+    """Сторно выручки в кэше начислений: минусовая «Выручка» или сторно продажи."""
     if not accruals:
         return False
     for row in accruals:
@@ -36,10 +36,15 @@ def accruals_have_revenue_reversal(accruals: list | None) -> bool:
             for item in row.get("items") or []:
                 if not isinstance(item, dict):
                     continue
+                if item.get("reversal"):
+                    return True
                 if str(item.get("label") or "") == "Выручка" and item.get("negative"):
                     return True
-        elif str(row.get("label") or "") == "Выручка" and row.get("negative"):
-            return True
+        else:
+            if row.get("reversal"):
+                return True
+            if str(row.get("label") or "") == "Выручка" and row.get("negative"):
+                return True
     return False
 
 
