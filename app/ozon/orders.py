@@ -3,7 +3,7 @@
 from datetime import date, datetime, time, timezone
 from decimal import Decimal
 
-from app.ozon.client import _post
+from app.ozon.client import _post, _post_content
 
 POSTING_LIST_LIMIT = 1000
 LIST_WITH = {"analytics_data": True, "financial_data": True}
@@ -135,3 +135,61 @@ def fetch_fbo_postings(client_id: str, api_key: str, date_from: date, date_to: d
     since, to = _iso_range(date_from, date_to)
     postings = _fetch_posting_pages(client_id, api_key, "/v2/posting/fbo/list", since, to)
     return [p for p in (normalize_posting(item, "FBO") for item in postings) if p]
+
+
+def ship_fbs_posting(
+    client_id: str,
+    api_key: str,
+    posting_number: str,
+    products: list[dict],
+) -> dict:
+    """Сборка отправления FBS: переводит его в статус «Ожидает отгрузки».
+
+    products: [{"product_id": int, "quantity": int}]
+    """
+    payload = {
+        "posting_number": posting_number,
+        "packages": [{"products": products}],
+        "with": {"additional_data": True},
+    }
+    return _post(client_id, api_key, "/v4/posting/fbs/ship", payload)
+
+
+def fetch_fbs_package_label(client_id: str, api_key: str, posting_number: str) -> bytes:
+    """PDF-этикетка отправления FBS (стикер для наклейки на посылку)."""
+    return _post_content(
+        client_id,
+        api_key,
+        "/v2/posting/fbs/package-label",
+        {"posting_number": [posting_number]},
+    )
+
+
+def posting_status_from_response(data: dict | None, posting_number: str) -> str | None:
+    """Статус отправления из ответа методов вроде /v4/posting/fbs/ship."""
+    if not isinstance(data, dict):
+        return None
+
+    result = data.get("result")
+    rows: list[dict] = []
+    if isinstance(result, list):
+        rows = [row for row in result if isinstance(row, dict)]
+    elif isinstance(result, dict):
+        rows = [result]
+
+    additional = data.get("additional_data")
+    if isinstance(additional, list):
+        rows.extend(row for row in additional if isinstance(row, dict))
+
+    for row in rows:
+        if posting_number and str(row.get("posting_number") or "") != posting_number:
+            continue
+        status = str(row.get("status") or "").strip()
+        if status:
+            return status
+    for row in rows:
+        status = str(row.get("status") or "").strip()
+        if status:
+            return status
+    return None
+

@@ -219,11 +219,10 @@ def fbs_orders():
     board = build_fbs_orders_board(current_user.id, date_from, date_to)
     items = board["orders"]
     if items:
-        from app.services.order_details import attach_order_margins, attach_order_product_cells
+        from app.services.order_details import attach_order_product_cells
         from app.services.order_returns import attach_post_delivery_return_flags
 
         # Страница должна открываться быстро: без внешних API в рендере.
-        attach_order_margins(items, current_user, use_transactions=False)
         attach_order_product_cells(items, current_user.id)
         attach_post_delivery_return_flags(items, current_user.id)
 

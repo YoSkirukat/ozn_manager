@@ -1679,6 +1679,25 @@ body {
     margin-top: 0.15rem;
 }
 
+/* Дополнительные колонки списка заказов FBS */
+.fbs-order-tracking {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #111827;
+    word-break: break-all;
+}
+
+.fbs-order-provider {
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: #111827;
+}
+
+.fbs-order-method {
+    line-height: 1.25;
+    word-break: break-word;
+}
+
 /* Сворачиваемый список отправленных заказов FBS */
 .fbs-shipped-toggle {
     display: inline-flex;
@@ -1956,6 +1975,12 @@ body {
 .ozon-status-ready {
     background: #e0f7fa;
     color: #00838f;
+}
+
+/* «Ожидает сборки» — статус требует действия продавца */
+.ozon-status-packing {
+    background: #fff3e0;
+    color: #e65100;
 }
 
 .ozon-status-shipping {

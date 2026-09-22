@@ -50,13 +50,14 @@ def _retry_delay(attempt: int) -> float:
     return min(32.0, 2.0 * (2**attempt) + random.uniform(0.0, 1.5))
 
 
-def _request(
+def _send(
     client_id: str,
     api_key: str,
     method: str,
     path: str,
     payload: dict | None = None,
-) -> dict:
+) -> requests.Response:
+    """Запрос к Ozon с троттлингом и повторами при лимите запросов."""
     last_error: Exception | None = None
     for attempt in range(API_MAX_RETRIES):
         _throttle(client_id)
@@ -92,11 +93,21 @@ def _request(
             raise RuntimeError(
                 f"Ozon API {path}: HTTP {resp.status_code} — {resp.text[:300]}"
             )
-        return resp.json()
+        return resp
 
     if last_error is not None:
         raise RuntimeError(RATE_LIMIT_MESSAGE) from last_error
     raise RuntimeError(f"Ozon API {path}: не удалось выполнить запрос.")
+
+
+def _request(
+    client_id: str,
+    api_key: str,
+    method: str,
+    path: str,
+    payload: dict | None = None,
+) -> dict:
+    return _send(client_id, api_key, method, path, payload).json()
 
 
 def _post(client_id: str, api_key: str, path: str, payload: dict) -> dict:
@@ -105,6 +116,11 @@ def _post(client_id: str, api_key: str, path: str, payload: dict) -> dict:
 
 def _get(client_id: str, api_key: str, path: str) -> dict:
     return _request(client_id, api_key, "GET", path)
+
+
+def _post_content(client_id: str, api_key: str, path: str, payload: dict) -> bytes:
+    """Бинарный ответ Ozon (например, PDF-этикетки отправлений)."""
+    return _send(client_id, api_key, "POST", path, payload).content
 
 
 def check_seller_credentials(client_id: str, api_key: str) -> dict:

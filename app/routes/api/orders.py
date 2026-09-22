@@ -5,6 +5,12 @@ from flask_login import current_user, login_required
 from werkzeug.utils import secure_filename
 
 from app.models import Order
+from app.services.order_actions import (
+    assemble_fbs_order,
+    load_fbs_label,
+    refresh_fbs_orders,
+)
+from app.services.orders_period import default_fbs_orders_period
 from app.services.order_details import get_order_detail
 from app.services.order_sync import load_orders_from_ozon
 from app.services.orders_export import export_orders_excel
@@ -109,6 +115,72 @@ def export_orders():
     return Response(
         content,
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f'attachment; filename="{safe_name}"',
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+@orders_api_bp.route("/orders/fbs/assemble", methods=["POST"])
+@login_required
+def assemble_fbs_posting():
+    """Сборка отправления FBS: переводит заказ в статус «Ожидает отгрузки»."""
+    data = request.get_json(silent=True) or {}
+    posting_number = str(data.get("posting_number") or "").strip()
+    if not posting_number:
+        return jsonify({"ok": False, "error": "Не указан номер отправления."}), 400
+
+    order = Order.query.filter_by(
+        user_id=current_user.id,
+        ozon_order_id=posting_number,
+    ).first()
+    if not order:
+        return jsonify({"ok": False, "error": "Заказ не найден."}), 404
+
+    result = assemble_fbs_order(current_user, order)
+    status = 200 if result.get("ok") else 400
+    return jsonify(result), status
+
+
+@orders_api_bp.route("/orders/fbs/refresh", methods=["POST"])
+@login_required
+def fbs_orders_refresh():
+    """Обновляет список и статусы заказов FBS из Ozon (без перезагрузки страницы)."""
+    data = request.get_json(silent=True) or {}
+    date_from = _parse_date(data.get("date_from") or "")
+    date_to = _parse_date(data.get("date_to") or "")
+    if not date_from or not date_to:
+        date_from, date_to = default_fbs_orders_period()
+
+    result = refresh_fbs_orders(current_user, date_from, date_to)
+    status = 200 if result.get("ok") else 400
+    return jsonify(result), status
+
+
+@orders_api_bp.route("/orders/fbs/label", methods=["GET"])
+@login_required
+def fbs_package_label():
+    """Скачивание этикетки (стикера) отправления FBS."""
+    posting_number = (request.args.get("posting_number") or "").strip()
+    if not posting_number:
+        return jsonify({"ok": False, "error": "Не указан номер отправления."}), 400
+
+    order = Order.query.filter_by(
+        user_id=current_user.id,
+        ozon_order_id=posting_number,
+    ).first()
+    if not order:
+        return jsonify({"ok": False, "error": "Заказ не найден."}), 404
+
+    result = load_fbs_label(current_user, order)
+    if not result.get("ok"):
+        return jsonify({"ok": False, "error": result.get("error")}), 400
+
+    safe_name = secure_filename(result["filename"]) or "label.pdf"
+    return Response(
+        result["content"],
+        mimetype="application/pdf",
         headers={
             "Content-Disposition": f'attachment; filename="{safe_name}"',
             "Cache-Control": "no-store",

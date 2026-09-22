@@ -36,7 +36,7 @@
             <div class="ozon-order-thumb ozon-order-thumb-empty" aria-hidden="true"></div>
             {% endif %}
         </div>
-        <div class="col-lg-4">
+        <div class="col-lg-2">
             {% set cell = o.product_cell() %}
             {% set promos = o.promotion_purchase_labels() %}
             <div class="product-cell-title" title="{{ cell.name }}">
@@ -50,18 +50,41 @@
             <div class="product-cell-meta font-monospace">{{ cell.offer_id }}</div>
             <div class="product-cell-meta font-monospace">{{ cell.barcode }}</div>
         </div>
-        <div class="col-lg-1 text-lg-end">
-            {% set margin = o.order_margin(current_user) %}
-            {% if margin is not none %}
-            <div class="ozon-order-margin{% if margin < 0 %} order-accrual-negative{% endif %}">
-                {%- if margin < 0 %}−{% endif -%}{{ margin|abs|money }} ₽
-            </div>
+        <div class="col-lg-1">
+            {% set tracking = o.tracking_number() %}
+            {% if tracking %}
+            <div class="fbs-order-tracking font-monospace" title="Трек-номер службы доставки">{{ tracking }}</div>
             {% else %}
-            <div class="ozon-order-margin text-muted">—</div>
+            <div class="text-muted">—</div>
             {% endif %}
         </div>
-        <div class="col-lg-2 text-lg-end">
+        <div class="col-lg-2">
+            <div class="fbs-order-provider">{{ o.delivery_provider() }}</div>
+            {% set method_name = o.delivery_method_name() %}
+            {% if method_name %}
+            <div class="fbs-order-method text-muted small" title="{{ method_name }}">{{ method_name }}</div>
+            {% endif %}
+        </div>
+        <div class="col-lg-1 text-lg-end">
             <div class="ozon-order-price">{{ '%.0f'|format(o.total) }} ₽</div>
+        </div>
+        <div class="col-lg-1">
+            <div class="d-grid gap-1">
+                {% if o.can_assemble_fbs() %}
+                <button type="button" class="btn btn-sm btn-primary fbs-assemble-btn"
+                        data-posting-number="{{ o.ozon_order_id }}"
+                        title="Собрать заказ: перевод в статус «Ожидает отгрузки»">
+                    Собрать
+                </button>
+                {% endif %}
+                {% if o.can_download_label() %}
+                <button type="button" class="btn btn-sm btn-outline-secondary fbs-label-btn"
+                        data-posting-number="{{ o.ozon_order_id }}"
+                        title="Скачать этикетку (стикер) отправления">
+                    Этикетка
+                </button>
+                {% endif %}
+            </div>
         </div>
     </div>
 </div>
@@ -85,9 +108,11 @@
             <div class="col-lg-2 text-center">Номер отправления</div>
             <div class="col-lg-2 text-center">Статус</div>
             <div class="col-lg-1 text-center">Фото</div>
-            <div class="col-lg-4 text-center">Количество, артикул / Название товара</div>
-            <div class="col-lg-1 text-center">Маржа</div>
-            <div class="col-lg-2 text-center">Стоимость</div>
+            <div class="col-lg-2 text-center">Количество, артикул / Название товара</div>
+            <div class="col-lg-1 text-center">Трек-номер</div>
+            <div class="col-lg-2 text-center">Служба доставки</div>
+            <div class="col-lg-1 text-center">Стоимость</div>
+            <div class="col-lg-1 text-center">Действие</div>
         </div>
         {% for o in group.orders %}
         {{ fbs_order_row(o) }}
@@ -104,6 +129,13 @@
                 Новые и отправленные заказы FBS по каждому складу, {{ period_label }}.
             </p>
         </div>
+        <button type="button" class="btn btn-outline-primary" id="btn-fbs-orders-refresh"
+                data-date-from="{{ date_from.isoformat() }}" data-date-to="{{ date_to.isoformat() }}"
+                title="Обновить список и статусы заказов из Ozon">
+            <span class="spinner-border spinner-border-sm d-none me-1" id="fbs-orders-refresh-spinner" role="status"></span>
+            <i class="bi bi-arrow-clockwise me-1" id="fbs-orders-refresh-icon" aria-hidden="true"></i>
+            Обновить
+        </button>
     </div>
 
     <section class="mb-5">

@@ -276,7 +276,7 @@ ORDER_STATUS_LABELS = {
 }
 
 ORDER_STATUS_BADGE = {
-    "awaiting_packaging": "ready",
+    "awaiting_packaging": "packing",
     "awaiting_deliver": "ready",
     "delivering": "shipping",
     "delivered": "done",
@@ -285,6 +285,10 @@ ORDER_STATUS_BADGE = {
     "awaiting_approve": "pending",
     "awaiting_pickup": "pending",
 }
+
+# Статусы FBS, в которых Ozon отдаёт этикетку отправления:
+# после сборки и до передачи в доставку Ozon перестаёт отдавать файл (INVALID_ARGUMENT).
+FBS_LABEL_STATUSES = frozenset({"awaiting_deliver"})
 
 
 class Order(db.Model):
@@ -312,6 +316,54 @@ class Order(db.Model):
 
     def status_display(self) -> str:
         return ORDER_STATUS_LABELS.get(self.status, self.status)
+
+    def fbs_available_actions(self) -> list[str]:
+        """Доступные в Ozon действия по отправлению (из raw_data)."""
+        raw = self.raw_data if isinstance(self.raw_data, dict) else {}
+        actions = raw.get("available_actions")
+        if not isinstance(actions, list):
+            return []
+        return [str(action) for action in actions if action]
+
+    def can_assemble_fbs(self) -> bool:
+        """Можно ли собрать отправление FBS (перевести в «Ожидает отгрузки»)."""
+        if (self.scheme or "").upper() != self.SCHEME_FBS:
+            return False
+        return bool({"ship", "ship_async"} & set(self.fbs_available_actions()))
+
+    def delivery_provider(self) -> str:
+        """Служба доставки (СДЭК, Ozon Логистика и т.п.)."""
+        raw = self.raw_data if isinstance(self.raw_data, dict) else {}
+        delivery = raw.get("delivery_method")
+        if not isinstance(delivery, dict):
+            return "—"
+        provider = str(delivery.get("tpl_provider") or "").strip()
+        if provider:
+            return provider
+        name = str(delivery.get("name") or "").strip()
+        return name or "—"
+
+    def delivery_method_name(self) -> str:
+        """Метод доставки так, как он описан в Ozon."""
+        raw = self.raw_data if isinstance(self.raw_data, dict) else {}
+        delivery = raw.get("delivery_method")
+        if not isinstance(delivery, dict):
+            return ""
+        return str(delivery.get("name") or "").strip()
+
+    def tracking_number(self) -> str:
+        """Трек-номер отправления у службы доставки (появляется после сборки)."""
+        raw = self.raw_data if isinstance(self.raw_data, dict) else {}
+        return str(raw.get("tracking_number") or "").strip()
+
+    def can_download_label(self) -> bool:
+        """Доступна ли этикетка отправления: после сборки либо по данным Ozon."""
+        if (self.scheme or "").upper() != self.SCHEME_FBS:
+            return False
+        if {"label_download", "label_download_small"} & set(self.fbs_available_actions()):
+            return True
+        return self.status in FBS_LABEL_STATUSES
+
 
     def status_badge_class(self) -> str:
         return ORDER_STATUS_BADGE.get(self.status, "default")
