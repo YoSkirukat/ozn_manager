@@ -1679,6 +1679,32 @@ body {
     margin-top: 0.15rem;
 }
 
+/* Сворачиваемый список отправленных заказов FBS */
+.fbs-shipped-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 1.25rem;
+    font-weight: 500;
+    color: #111827;
+    text-decoration: none;
+}
+
+.fbs-shipped-toggle:hover,
+.fbs-shipped-toggle:focus {
+    color: #0d6efd;
+    text-decoration: none;
+}
+
+.fbs-shipped-toggle .fbs-shipped-chevron {
+    font-size: 1rem;
+    transition: transform 0.2s ease;
+}
+
+.fbs-shipped-toggle[aria-expanded="true"] .fbs-shipped-chevron {
+    transform: rotate(90deg);
+}
+
 /* Список заказов в стиле Ozon */
 .ozon-orders-card {
    /* overflow: hidden; */

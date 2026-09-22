@@ -14,10 +14,10 @@ from app.services.orders_filters import (
     status_options,
 )
 from app.services.orders_period import (
+    default_fbs_orders_period,
     default_shipments_period,
+    format_period_range,
     get_orders_period,
-    resolve_fbs_orders_period,
-    save_fbs_orders_period,
     save_orders_period,
     save_shipments_period,
 )
@@ -210,12 +210,11 @@ def orders():
 def fbs_orders():
     from app.services.fbs_orders import build_fbs_orders_board
 
+    # Период страницы фиксирован — последний месяц; from/to принимаются только из ссылки.
     date_from = _parse_date_param(request.args.get("from"))
     date_to = _parse_date_param(request.args.get("to"))
     if not date_from or not date_to:
-        date_from, date_to = resolve_fbs_orders_period()
-
-    save_fbs_orders_period(date_from, date_to)
+        date_from, date_to = default_fbs_orders_period()
 
     board = build_fbs_orders_board(current_user.id, date_from, date_to)
     items = board["orders"]
@@ -234,10 +233,9 @@ def fbs_orders():
         shipped_groups=board["shipped_groups"],
         new_count=board["new_count"],
         shipped_count=board["shipped_count"],
-        new_quantity=board["new_quantity"],
         date_from=date_from,
         date_to=date_to,
-        has_ozon=current_user.has_ozon_credentials(),
+        period_label=format_period_range(date_from, date_to),
     )
 
 

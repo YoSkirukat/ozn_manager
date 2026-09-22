@@ -117,5 +117,4 @@ def build_fbs_orders_board(
         "shipped_groups": _group_by_warehouse(shipped_orders),
         "new_count": len(new_orders),
         "shipped_count": len(shipped_orders),
-        "new_quantity": sum(order_items_quantity(order) for order in new_orders),
     }

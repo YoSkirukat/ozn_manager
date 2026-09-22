@@ -101,78 +101,8 @@
         <div>
             <h1 class="h3 mb-1">Заказы FBS</h1>
             <p class="text-muted small mb-0">
-                Новые и отправленные заказы FBS по каждому складу. Период: {{ date_from|d }} — {{ date_to|d }}.
+                Новые и отправленные заказы FBS по каждому складу, {{ period_label }}.
             </p>
-        </div>
-    </div>
-
-    {% if not has_ozon %}
-    <div class="alert alert-warning py-2">
-        Для загрузки заказов укажите <strong>Client-Id</strong> и <strong>Api-Key</strong> в
-        <a href="{{ url_for('profile.index') }}">профиле</a>.
-    </div>
-    {% endif %}
-
-    <div class="card shadow-sm mb-4" id="fbs-orders-toolbar"
-         data-date-from="{{ date_from.isoformat() }}"
-         data-date-to="{{ date_to.isoformat() }}">
-        <div class="card-body">
-            <div class="row g-3 align-items-end">
-                <div class="col-sm-6 col-lg-4">
-                    <label class="form-label" for="fbs-orders-date-range">Период</label>
-                    <input type="text" class="form-control" id="fbs-orders-date-range"
-                           placeholder="Выберите даты" autocomplete="off"
-                           data-date-from="{{ date_from.isoformat() }}"
-                           data-date-to="{{ date_to.isoformat() }}"
-                           {% if not has_ozon %}disabled{% endif %}>
-                </div>
-                <div class="col-sm-6 col-lg-8">
-                    <div class="d-flex flex-wrap gap-2 justify-content-lg-end">
-                        <button type="button" class="btn btn-outline-primary" id="btn-fbs-orders-show"
-                                title="Показать заказы FBS из базы за выбранный период (без запроса к Ozon)">
-                            Показать заказы
-                        </button>
-                        <button type="button" class="btn btn-primary" id="btn-fbs-orders-sync"
-                                data-has-ozon="{{ '1' if has_ozon else '0' }}"
-                                {% if not has_ozon %}disabled title="Подключите Ozon API в профиле"{% else %}title="Загрузить заказы за период из Ozon"{% endif %}>
-                            <span class="spinner-border spinner-border-sm d-none me-1" id="fbs-orders-sync-spinner" role="status"></span>
-                            Обновить из Ozon
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div id="fbs-orders-message"></div>
-
-    <div class="row g-3 mb-4">
-        <div class="col-sm-6 col-lg-4">
-            <div class="card shadow-sm h-100">
-                <div class="card-body">
-                    <div class="text-muted small">Новые заказы</div>
-                    <div class="h4 mb-0">{{ new_count }}</div>
-                    <div class="text-muted small">Товаров: {{ new_quantity }}</div>
-                </div>
-            </div>
-        </div>
-        <div class="col-sm-6 col-lg-4">
-            <div class="card shadow-sm h-100">
-                <div class="card-body">
-                    <div class="text-muted small">Отправлено</div>
-                    <div class="h4 mb-0">{{ shipped_count }}</div>
-                    <div class="text-muted small">Передано в доставку или доставлено</div>
-                </div>
-            </div>
-        </div>
-        <div class="col-sm-6 col-lg-4">
-            <div class="card shadow-sm h-100">
-                <div class="card-body">
-                    <div class="text-muted small">Склады с новыми заказами</div>
-                    <div class="h4 mb-0">{{ new_groups|length }}</div>
-                    <div class="text-muted small">Всего заказов FBS: {{ new_count + shipped_count }}</div>
-                </div>
-            </div>
         </div>
     </div>
 
@@ -187,25 +117,33 @@
         {% endfor %}
         {% else %}
         <div class="alert alert-light border text-center text-muted mb-0">
-            Новых заказов FBS за период нет. Нажмите «Обновить из Ozon», чтобы загрузить их из Ozon.
+            Новых заказов FBS {{ period_label }} нет.
         </div>
         {% endif %}
     </section>
 
     <section class="mb-4">
         <h2 class="h5 mb-3">
-            Отправленные заказы
-            <span class="badge text-bg-secondary align-middle">{{ shipped_count }}</span>
+            <button class="btn btn-link p-0 fbs-shipped-toggle" type="button"
+                    data-bs-toggle="collapse" data-bs-target="#fbs-shipped-collapse"
+                    aria-expanded="false" aria-controls="fbs-shipped-collapse">
+                <i class="bi bi-chevron-right fbs-shipped-chevron" aria-hidden="true"></i>
+                <span>Отправленные заказы</span>
+                <span class="text-muted fw-normal small">{{ period_label }}</span>
+                <span class="badge text-bg-secondary align-middle">{{ shipped_count }}</span>
+            </button>
         </h2>
-        {% if shipped_groups %}
-        {% for group in shipped_groups %}
-        {{ fbs_warehouse_card(group) }}
-        {% endfor %}
-        {% else %}
-        <div class="alert alert-light border text-center text-muted mb-0">
-            Отправленных заказов FBS за период нет.
+        <div class="collapse" id="fbs-shipped-collapse">
+            {% if shipped_groups %}
+            {% for group in shipped_groups %}
+            {{ fbs_warehouse_card(group) }}
+            {% endfor %}
+            {% else %}
+            <div class="alert alert-light border text-center text-muted mb-0">
+                Отправленных заказов FBS {{ period_label }} нет.
+            </div>
+            {% endif %}
         </div>
-        {% endif %}
     </section>
 
     <p class="text-muted small">
