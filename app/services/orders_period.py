@@ -8,8 +8,10 @@ from app.datetime_fmt import local_today
 
 SESSION_ORDERS_PERIOD = "orders_period"
 SESSION_SHIPMENTS_PERIOD = "shipments_period"
+SESSION_FBS_ORDERS_PERIOD = "fbs_orders_period"
 SHIPMENTS_DEFAULT_DAYS_BEFORE = 7
 SHIPMENTS_DEFAULT_DAYS_AFTER = 14
+FBS_ORDERS_DEFAULT_DAYS = 30
 
 
 def _parse_date_param(value: str | None) -> date | None:
@@ -66,6 +68,30 @@ def resolve_orders_period() -> tuple[date, date]:
     if date_from and date_to:
         return date_from, date_to
     return default_chart_period()
+
+
+def get_fbs_orders_period() -> tuple[date | None, date | None]:
+    raw = session.get(SESSION_FBS_ORDERS_PERIOD) or {}
+    return _parse_date_param(raw.get("from")), _parse_date_param(raw.get("to"))
+
+
+def save_fbs_orders_period(date_from: date, date_to: date) -> None:
+    session[SESSION_FBS_ORDERS_PERIOD] = {
+        "from": date_from.isoformat(),
+        "to": date_to.isoformat(),
+    }
+
+
+def default_fbs_orders_period() -> tuple[date, date]:
+    today = local_today()
+    return today - timedelta(days=FBS_ORDERS_DEFAULT_DAYS - 1), today
+
+
+def resolve_fbs_orders_period() -> tuple[date, date]:
+    date_from, date_to = get_fbs_orders_period()
+    if date_from and date_to:
+        return date_from, date_to
+    return default_fbs_orders_period()
 
 
 def resolve_shipments_period() -> tuple[date, date]:

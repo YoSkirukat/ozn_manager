@@ -16,6 +16,8 @@ from app.services.orders_filters import (
 from app.services.orders_period import (
     default_shipments_period,
     get_orders_period,
+    resolve_fbs_orders_period,
+    save_fbs_orders_period,
     save_orders_period,
     save_shipments_period,
 )
@@ -38,6 +40,7 @@ PAGES = {
     "/": ("partials/dashboard.html", "index.html", "Главная — Ozon Manager"),
     "/products": ("partials/products.html", "pages/products.html", "Товары — Ozon Manager"),
     "/orders": ("partials/orders.html", "pages/orders.html", "Заказы — Ozon Manager"),
+    "/fbs-orders": ("partials/fbs_orders.html", "pages/fbs_orders.html", "Заказы FBS — Ozon Manager"),
     "/shipments": ("partials/shipments.html", "pages/shipments.html", "Поставки — Ozon Manager"),
     "/reports": ("partials/reports.html", "pages/reports.html", "Отчёты — Ozon Manager"),
     "/reports/stock": ("partials/stock.html", "pages/stock.html", "Остатки товаров — Ozon Manager"),
@@ -199,6 +202,42 @@ def orders():
         selected_schemes=selected_schemes,
         selected_delivery=selected_delivery,
         filters_active=bool(selected_statuses or selected_schemes or selected_delivery),
+    )
+
+
+@main_bp.route("/fbs-orders")
+@login_required
+def fbs_orders():
+    from app.services.fbs_orders import build_fbs_orders_board
+
+    date_from = _parse_date_param(request.args.get("from"))
+    date_to = _parse_date_param(request.args.get("to"))
+    if not date_from or not date_to:
+        date_from, date_to = resolve_fbs_orders_period()
+
+    save_fbs_orders_period(date_from, date_to)
+
+    board = build_fbs_orders_board(current_user.id, date_from, date_to)
+    items = board["orders"]
+    if items:
+        from app.services.order_details import attach_order_margins, attach_order_product_cells
+        from app.services.order_returns import attach_post_delivery_return_flags
+
+        # Страница должна открываться быстро: без внешних API в рендере.
+        attach_order_margins(items, current_user, use_transactions=False)
+        attach_order_product_cells(items, current_user.id)
+        attach_post_delivery_return_flags(items, current_user.id)
+
+    return _render_page(
+        "/fbs-orders",
+        new_groups=board["new_groups"],
+        shipped_groups=board["shipped_groups"],
+        new_count=board["new_count"],
+        shipped_count=board["shipped_count"],
+        new_quantity=board["new_quantity"],
+        date_from=date_from,
+        date_to=date_to,
+        has_ozon=current_user.has_ozon_credentials(),
     )
 
 

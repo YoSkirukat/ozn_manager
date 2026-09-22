@@ -507,7 +507,7 @@ function initDashboardPage() {
 async function loadDashboardStats() {
     const stats = [
         { key: "returns_at_pickup", id: "stat-returns-at-pickup", periodId: "stat-returns-at-pickup-period" },
-        { key: "orders", id: "stat-orders", periodId: "stat-orders-period" },
+        { key: "fbs_orders", id: "stat-fbs-orders", periodId: "stat-fbs-orders-period" },
         { key: "shipments", id: "stat-shipments", periodId: "stat-shipments-period" },
         { key: "products_in_promotions", id: "stat-products-in-promotions" },
     ];
@@ -525,17 +525,14 @@ async function loadDashboardStats() {
                     periodEl.textContent = data.returns_at_pickup_label || "В пункте выдачи";
                     return;
                 }
+                if (key === "fbs_orders") {
+                    periodEl.textContent = data.fbs_orders_label || "Новые заказы";
+                    return;
+                }
                 const label = data[`${key}_period`];
                 periodEl.textContent = label || "";
             }
         });
-
-        const ordersLink = document.getElementById("stat-orders-link");
-        if (ordersLink && data.orders_period_from && data.orders_period_to) {
-            const href = `/orders?from=${encodeURIComponent(data.orders_period_from)}&to=${encodeURIComponent(data.orders_period_to)}`;
-            ordersLink.href = href;
-            ordersLink.dataset.nav = href;
-        }
 
         const shipmentsLink = document.getElementById("stat-shipments-link");
         if (shipmentsLink && data.shipments_period_from && data.shipments_period_to) {

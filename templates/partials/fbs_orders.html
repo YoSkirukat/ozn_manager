@@ -1,0 +1,235 @@
+{# Строка отправления FBS (как в списке заказов; склад указан в заголовке группы). #}
+{% macro fbs_order_row(o) %}
+<div class="ozon-order-row">
+    <div class="row g-3 align-items-center">
+        <div class="col-lg-2">
+            <button type="button" class="ozon-posting-link btn btn-link p-0 text-start"
+                    data-posting-number="{{ o.ozon_order_id }}">{{ o.ozon_order_id }}</button>
+            <div class="ozon-posting-meta">
+                {{ o.order_date|dt }}
+                &middot;
+                <span class="ozon-scheme ozon-scheme-{{ o.scheme|lower }}">{{ o.scheme_display() }}</span>
+                {% if o.is_international() %}
+                &middot;
+                <span class="ozon-order-country">{{ o.delivery_country() }}</span>
+                {% endif %}
+            </div>
+        </div>
+        <div class="col-lg-2 text-lg-center">
+            <span class="ozon-status-badge ozon-status-{{ o.status_badge_class() }}">
+                {{ o.status_display() }}
+            </span>
+            {% if o.has_refund_after_delivery() %}
+            <span class="product-return-mark product-return-mark--inline"
+                  title="{{ o.refund_after_delivery_tooltip() }}"
+                  aria-label="Возврат средств после доставки">В</span>
+            {% endif %}
+            {% if o.is_international() %}
+            <div class="ozon-order-international mt-1">Международный</div>
+            {% endif %}
+        </div>
+        <div class="col-lg-1">
+            {% if o.product_image_url() %}
+            <img src="{{ o.product_image_url() }}" alt="" class="ozon-order-thumb" loading="lazy"
+                 referrerpolicy="no-referrer">
+            {% else %}
+            <div class="ozon-order-thumb ozon-order-thumb-empty" aria-hidden="true"></div>
+            {% endif %}
+        </div>
+        <div class="col-lg-4">
+            {% set cell = o.product_cell() %}
+            {% set promos = o.promotion_purchase_labels() %}
+            <div class="product-cell-title" title="{{ cell.name }}">
+                {% if promos %}
+                <span class="product-promo-mark product-promo-mark--inline"
+                      title="{{ promos|join(' · ') }}"
+                      aria-label="Куплен по акции">А</span>
+                {% endif %}
+                {{ cell.title }}
+            </div>
+            <div class="product-cell-meta font-monospace">{{ cell.offer_id }}</div>
+            <div class="product-cell-meta font-monospace">{{ cell.barcode }}</div>
+        </div>
+        <div class="col-lg-1 text-lg-end">
+            {% set margin = o.order_margin(current_user) %}
+            {% if margin is not none %}
+            <div class="ozon-order-margin{% if margin < 0 %} order-accrual-negative{% endif %}">
+                {%- if margin < 0 %}−{% endif -%}{{ margin|abs|money }} ₽
+            </div>
+            {% else %}
+            <div class="ozon-order-margin text-muted">—</div>
+            {% endif %}
+        </div>
+        <div class="col-lg-2 text-lg-end">
+            <div class="ozon-order-price">{{ '%.0f'|format(o.total) }} ₽</div>
+        </div>
+    </div>
+</div>
+{% endmacro %}
+
+{# Карточка заказов одного склада FBS. #}
+{% macro fbs_warehouse_card(group) %}
+<div class="card shadow-sm mb-3">
+    <div class="card-header bg-white d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <div class="fw-semibold">
+            <i class="bi bi-box-seam me-1" aria-hidden="true"></i>{{ group.name }}
+        </div>
+        <div class="d-flex flex-wrap gap-3 small text-muted">
+            <span>Заказов: <strong class="text-dark">{{ group.count }}</strong></span>
+            <span>Товаров: <strong class="text-dark">{{ group.quantity }}</strong></span>
+            <span>Сумма: <strong class="text-dark">{{ group.total|money }} ₽</strong></span>
+        </div>
+    </div>
+    <div class="ozon-orders-card bg-white rounded-bottom">
+        <div class="ozon-orders-head row g-0 d-none d-lg-flex">
+            <div class="col-lg-2 text-center">Номер отправления</div>
+            <div class="col-lg-2 text-center">Статус</div>
+            <div class="col-lg-1 text-center">Фото</div>
+            <div class="col-lg-4 text-center">Количество, артикул / Название товара</div>
+            <div class="col-lg-1 text-center">Маржа</div>
+            <div class="col-lg-2 text-center">Стоимость</div>
+        </div>
+        {% for o in group.orders %}
+        {{ fbs_order_row(o) }}
+        {% endfor %}
+    </div>
+</div>
+{% endmacro %}
+
+<div data-page-title="{{ page_title }}">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4">
+        <div>
+            <h1 class="h3 mb-1">Заказы FBS</h1>
+            <p class="text-muted small mb-0">
+                Новые и отправленные заказы FBS по каждому складу. Период: {{ date_from|d }} — {{ date_to|d }}.
+            </p>
+        </div>
+    </div>
+
+    {% if not has_ozon %}
+    <div class="alert alert-warning py-2">
+        Для загрузки заказов укажите <strong>Client-Id</strong> и <strong>Api-Key</strong> в
+        <a href="{{ url_for('profile.index') }}">профиле</a>.
+    </div>
+    {% endif %}
+
+    <div class="card shadow-sm mb-4" id="fbs-orders-toolbar"
+         data-date-from="{{ date_from.isoformat() }}"
+         data-date-to="{{ date_to.isoformat() }}">
+        <div class="card-body">
+            <div class="row g-3 align-items-end">
+                <div class="col-sm-6 col-lg-4">
+                    <label class="form-label" for="fbs-orders-date-range">Период</label>
+                    <input type="text" class="form-control" id="fbs-orders-date-range"
+                           placeholder="Выберите даты" autocomplete="off"
+                           data-date-from="{{ date_from.isoformat() }}"
+                           data-date-to="{{ date_to.isoformat() }}"
+                           {% if not has_ozon %}disabled{% endif %}>
+                </div>
+                <div class="col-sm-6 col-lg-8">
+                    <div class="d-flex flex-wrap gap-2 justify-content-lg-end">
+                        <button type="button" class="btn btn-outline-primary" id="btn-fbs-orders-show"
+                                title="Показать заказы FBS из базы за выбранный период (без запроса к Ozon)">
+                            Показать заказы
+                        </button>
+                        <button type="button" class="btn btn-primary" id="btn-fbs-orders-sync"
+                                data-has-ozon="{{ '1' if has_ozon else '0' }}"
+                                {% if not has_ozon %}disabled title="Подключите Ozon API в профиле"{% else %}title="Загрузить заказы за период из Ozon"{% endif %}>
+                            <span class="spinner-border spinner-border-sm d-none me-1" id="fbs-orders-sync-spinner" role="status"></span>
+                            Обновить из Ozon
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="fbs-orders-message"></div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-sm-6 col-lg-4">
+            <div class="card shadow-sm h-100">
+                <div class="card-body">
+                    <div class="text-muted small">Новые заказы</div>
+                    <div class="h4 mb-0">{{ new_count }}</div>
+                    <div class="text-muted small">Товаров: {{ new_quantity }}</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-sm-6 col-lg-4">
+            <div class="card shadow-sm h-100">
+                <div class="card-body">
+                    <div class="text-muted small">Отправлено</div>
+                    <div class="h4 mb-0">{{ shipped_count }}</div>
+                    <div class="text-muted small">Передано в доставку или доставлено</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-sm-6 col-lg-4">
+            <div class="card shadow-sm h-100">
+                <div class="card-body">
+                    <div class="text-muted small">Склады с новыми заказами</div>
+                    <div class="h4 mb-0">{{ new_groups|length }}</div>
+                    <div class="text-muted small">Всего заказов FBS: {{ new_count + shipped_count }}</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <section class="mb-5">
+        <h2 class="h5 mb-3">
+            Новые заказы
+            <span class="badge text-bg-primary align-middle">{{ new_count }}</span>
+        </h2>
+        {% if new_groups %}
+        {% for group in new_groups %}
+        {{ fbs_warehouse_card(group) }}
+        {% endfor %}
+        {% else %}
+        <div class="alert alert-light border text-center text-muted mb-0">
+            Новых заказов FBS за период нет. Нажмите «Обновить из Ozon», чтобы загрузить их из Ozon.
+        </div>
+        {% endif %}
+    </section>
+
+    <section class="mb-4">
+        <h2 class="h5 mb-3">
+            Отправленные заказы
+            <span class="badge text-bg-secondary align-middle">{{ shipped_count }}</span>
+        </h2>
+        {% if shipped_groups %}
+        {% for group in shipped_groups %}
+        {{ fbs_warehouse_card(group) }}
+        {% endfor %}
+        {% else %}
+        <div class="alert alert-light border text-center text-muted mb-0">
+            Отправленных заказов FBS за период нет.
+        </div>
+        {% endif %}
+    </section>
+
+    <p class="text-muted small">
+        Отменённые и спорные заказы на этой странице не отображаются — смотрите раздел
+        <a href="/orders" data-nav="/orders">Заказы</a>.
+    </p>
+
+    <div class="modal fade" id="order-detail-modal" tabindex="-1" aria-labelledby="orderDetailModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div>
+                        <h5 class="modal-title mb-1" id="orderDetailModalLabel">
+                            <span id="order-modal-number">—</span>
+                        </h5>
+                        <div class="small text-muted" id="order-modal-meta"></div>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+                </div>
+                <div class="modal-body" id="order-modal-body">
+                    <div class="text-center text-muted py-4" id="order-modal-loading">Загрузка...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
