@@ -79,11 +79,11 @@ async function downloadFbsLabel(btn) {
 
 function markFbsLabelDownloaded(btn) {
     if (!btn || btn.querySelector(".fbs-label-done")) return;
-    const mark = document.createElement("span");
-    mark.className = "fbs-label-done";
-    mark.title = "Этикетка скачана";
-    mark.textContent = "✓";
-    btn.appendChild(mark);
+    // Разметка ровно такая же, как при рендере страницы, — галочка сразу на своём месте.
+    btn.insertAdjacentHTML(
+        "beforeend",
+        '<span class="fbs-label-done" title="Этикетка скачана">✓</span>'
+    );
 }
 
 async function refreshFbsOrdersList() {

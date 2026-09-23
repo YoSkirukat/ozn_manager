@@ -1701,6 +1701,10 @@ body {
 }
 
 /* Отметка «этикетка уже скачана» (внутри кнопки после названия) */
+.fbs-label-btn {
+    white-space: nowrap;
+}
+
 .fbs-label-done {
     margin-left: 0.3rem;
     color: #2e7d32;
