@@ -1687,6 +1687,26 @@ body {
     word-break: break-all;
 }
 
+/* Последние 4 цифры трек-номера — крупнее и жирнее (как ориентир для оператора) */
+.fbs-order-tracking-head {
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: #6b7280;
+}
+
+.fbs-order-tracking-tail {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: #111827;
+}
+
+/* Отметка «этикетка уже скачана» (внутри кнопки после названия) */
+.fbs-label-done {
+    margin-left: 0.3rem;
+    color: #2e7d32;
+    font-weight: 700;
+}
+
 .fbs-order-provider {
     font-weight: 600;
     font-size: 0.9rem;

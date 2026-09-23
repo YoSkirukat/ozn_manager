@@ -5,7 +5,7 @@ from decimal import Decimal
 from app.datetime_fmt import format_datetime
 from app.db_sqlite import db_session_commit
 from app.extensions import db
-from app.models import ORDER_STATUS_DELIVERED, ORDER_STATUS_LABELS, Product
+from app.models import LABEL_DOWNLOADED_RAW_KEY, ORDER_STATUS_DELIVERED, ORDER_STATUS_LABELS, Product
 from app.ozon.client import _post
 from app.ozon.finance import (
     PostingAccruals,
@@ -284,6 +284,9 @@ FINANCIAL_RAW_CACHE_KEYS = (
 )
 PROMOTION_RAW_CACHE_KEYS = ("_product_promotions",)
 
+# Локальные отметки сервиса, которые не приходят из Ozon и не должны теряться при синхронизации.
+LOCAL_RAW_KEYS = (LABEL_DOWNLOADED_RAW_KEY,)
+
 # v3: строки начислений строятся из /v1/finance/accrual/postings.
 # v2 хранил неполные строки, полученные из устаревшего /v3/finance/transaction/list,
 # поэтому такие кэши перестаём доверять и пересчитываем.
@@ -395,6 +398,9 @@ def merge_order_raw_data(
             if key in old_raw:
                 merged[key] = old_raw[key]
     for key in PROMOTION_RAW_CACHE_KEYS:
+        if key in old_raw:
+            merged[key] = old_raw[key]
+    for key in LOCAL_RAW_KEYS:
         if key in old_raw:
             merged[key] = old_raw[key]
     return merged

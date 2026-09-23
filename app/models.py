@@ -290,6 +290,9 @@ ORDER_STATUS_BADGE = {
 # после сборки и до передачи в доставку Ozon перестаёт отдавать файл (INVALID_ARGUMENT).
 FBS_LABEL_STATUSES = frozenset({"awaiting_deliver"})
 
+# Локальная отметка сервиса: когда этикетка отправления была скачана.
+LABEL_DOWNLOADED_RAW_KEY = "_label_downloaded_at"
+
 
 class Order(db.Model):
     __tablename__ = "orders"
@@ -363,6 +366,20 @@ class Order(db.Model):
         if {"label_download", "label_download_small"} & set(self.fbs_available_actions()):
             return True
         return self.status in FBS_LABEL_STATUSES
+
+    def label_downloaded_at(self) -> datetime | None:
+        """Когда этикетка отправления была скачана из сервиса."""
+        raw = self.raw_data if isinstance(self.raw_data, dict) else {}
+        value = raw.get(LABEL_DOWNLOADED_RAW_KEY)
+        if not value:
+            return None
+        try:
+            parsed = datetime.fromisoformat(str(value))
+        except ValueError:
+            return None
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=timezone.utc)
+        return parsed
 
 
     def status_badge_class(self) -> str:

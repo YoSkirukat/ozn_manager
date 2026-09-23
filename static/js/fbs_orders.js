@@ -38,6 +38,7 @@ async function downloadFbsLabel(btn) {
     if (!postingNumber) return;
 
     const originalHtml = btn.innerHTML;
+    let downloaded = false;
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status"></span>';
 
@@ -62,6 +63,7 @@ async function downloadFbsLabel(btn) {
         link.remove();
         URL.revokeObjectURL(blobUrl);
 
+        downloaded = true;
         if (typeof showToast === "function") {
             showToast(`Этикетка ${postingNumber} загружена.`, "success");
         }
@@ -70,7 +72,18 @@ async function downloadFbsLabel(btn) {
     } finally {
         btn.disabled = false;
         btn.innerHTML = originalHtml;
+        // Галочка внутрь кнопки, после слова «Этикетка».
+        if (downloaded) markFbsLabelDownloaded(btn);
     }
+}
+
+function markFbsLabelDownloaded(btn) {
+    if (!btn || btn.querySelector(".fbs-label-done")) return;
+    const mark = document.createElement("span");
+    mark.className = "fbs-label-done";
+    mark.title = "Этикетка скачана";
+    mark.textContent = "✓";
+    btn.appendChild(mark);
 }
 
 async function refreshFbsOrdersList() {

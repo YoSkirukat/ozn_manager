@@ -7,7 +7,7 @@ import re
 
 from app.datetime_fmt import utc_bounds_for_local_dates
 from app.db_sqlite import db_session_commit
-from app.models import Order
+from app.models import LABEL_DOWNLOADED_RAW_KEY, Order, utcnow
 from app.ozon.orders import (
     fetch_fbs_package_label,
     posting_status_from_response,
@@ -230,8 +230,14 @@ def load_fbs_label(user, order: Order) -> dict:
     if not content:
         return {"ok": False, "error": "Ozon не вернул файл этикетки."}
 
+    raw = dict(order.raw_data) if isinstance(order.raw_data, dict) else {}
+    raw[LABEL_DOWNLOADED_RAW_KEY] = utcnow().isoformat()
+    order.raw_data = raw
+    db_session_commit()
+
     return {
         "ok": True,
         "content": content,
         "filename": f"label-{order.ozon_order_id}.pdf",
+        "downloaded_at": raw[LABEL_DOWNLOADED_RAW_KEY],
     }

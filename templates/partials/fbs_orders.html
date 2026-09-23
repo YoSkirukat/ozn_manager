@@ -15,6 +15,19 @@
                 {% endif %}
             </div>
         </div>
+        <div class="col-lg-1">
+            {% set tracking = o.tracking_number() %}
+            {% if tracking|length > 4 %}
+            <div class="fbs-order-tracking font-monospace" title="Трек-номер службы доставки">
+                <span class="fbs-order-tracking-head">{{ tracking[:-4] }}</span><span
+                        class="fbs-order-tracking-tail">{{ tracking[-4:] }}</span>
+            </div>
+            {% elif tracking %}
+            <div class="fbs-order-tracking font-monospace" title="Трек-номер службы доставки">{{ tracking }}</div>
+            {% else %}
+            <div class="text-muted">—</div>
+            {% endif %}
+        </div>
         <div class="col-lg-2 text-lg-center">
             <span class="ozon-status-badge ozon-status-{{ o.status_badge_class() }}">
                 {{ o.status_display() }}
@@ -50,14 +63,6 @@
             <div class="product-cell-meta font-monospace">{{ cell.offer_id }}</div>
             <div class="product-cell-meta font-monospace">{{ cell.barcode }}</div>
         </div>
-        <div class="col-lg-1">
-            {% set tracking = o.tracking_number() %}
-            {% if tracking %}
-            <div class="fbs-order-tracking font-monospace" title="Трек-номер службы доставки">{{ tracking }}</div>
-            {% else %}
-            <div class="text-muted">—</div>
-            {% endif %}
-        </div>
         <div class="col-lg-2">
             <div class="fbs-order-provider">{{ o.delivery_provider() }}</div>
             {% set method_name = o.delivery_method_name() %}
@@ -77,12 +82,16 @@
                     Собрать
                 </button>
                 {% endif %}
+                {% set label_downloaded = o.label_downloaded_at() %}
                 {% if o.can_download_label() %}
                 <button type="button" class="btn btn-sm btn-outline-secondary fbs-label-btn"
                         data-posting-number="{{ o.ozon_order_id }}"
                         title="Скачать этикетку (стикер) отправления">
-                    Этикетка
+                    Этикетка{% if label_downloaded %}<span class="fbs-label-done"
+                        title="Этикетка скачана: {{ label_downloaded|dt }}">✓</span>{% endif %}
                 </button>
+                {% elif label_downloaded %}
+                <span class="fbs-label-done" title="Этикетка скачана: {{ label_downloaded|dt }}">✓</span>
                 {% endif %}
             </div>
         </div>
@@ -106,10 +115,10 @@
     <div class="ozon-orders-card bg-white rounded-bottom">
         <div class="ozon-orders-head row g-0 d-none d-lg-flex">
             <div class="col-lg-2 text-center">Номер отправления</div>
+            <div class="col-lg-1 text-center">Трек-номер</div>
             <div class="col-lg-2 text-center">Статус</div>
             <div class="col-lg-1 text-center">Фото</div>
             <div class="col-lg-2 text-center">Количество, артикул / Название товара</div>
-            <div class="col-lg-1 text-center">Трек-номер</div>
             <div class="col-lg-2 text-center">Служба доставки</div>
             <div class="col-lg-1 text-center">Стоимость</div>
             <div class="col-lg-1 text-center">Действие</div>
