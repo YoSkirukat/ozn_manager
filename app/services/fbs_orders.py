@@ -53,11 +53,8 @@ def order_warehouse_name(order: Order) -> str:
 
 
 def order_items_quantity(order: Order) -> int:
-    quantity = 0
-    for item in order.products_list():
-        if isinstance(item, dict):
-            quantity += int(item.get("quantity") or 1)
-    return quantity
+    """Суммарное количество товаров в отправлении."""
+    return order.items_quantity()
 
 
 def load_fbs_orders(user_id: int, date_from: date, date_to: date) -> list[Order]:

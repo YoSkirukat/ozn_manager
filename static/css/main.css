@@ -1700,6 +1700,31 @@ body {
     color: #111827;
 }
 
+/* Количество товара в отправлении — крупно, жирно и по центру */
+.fbs-order-quantity {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: #111827;
+    line-height: 1.2;
+    text-align: center;
+}
+
+/* Фото + товар в одной колонке */
+.fbs-order-product {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+}
+
+.fbs-order-product-thumb {
+    flex: 0 0 auto;
+}
+
+.fbs-order-product-info {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
 /* Отметка «этикетка уже скачана» (внутри кнопки после названия) */
 .fbs-label-btn {
     white-space: nowrap;

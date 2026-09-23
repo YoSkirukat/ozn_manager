@@ -399,6 +399,13 @@ class Order(db.Model):
                 products = financial
         return [p for p in products if isinstance(p, dict)]
 
+    def items_quantity(self) -> int:
+        """Суммарное количество товаров в отправлении."""
+        total = 0
+        for item in self.products_list():
+            total += int(item.get("quantity") or 1)
+        return total
+
     def primary_product(self) -> dict:
         items = self.products_list()
         return items[0] if items else {}

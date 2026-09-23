@@ -2,6 +2,19 @@
 {% macro fbs_order_row(o) %}
 <div class="ozon-order-row">
     <div class="row g-3 align-items-center">
+        <div class="col-lg-2 text-lg-center">
+            <span class="ozon-status-badge ozon-status-{{ o.status_badge_class() }}">
+                {{ o.status_display() }}
+            </span>
+            {% if o.has_refund_after_delivery() %}
+            <span class="product-return-mark product-return-mark--inline"
+                  title="{{ o.refund_after_delivery_tooltip() }}"
+                  aria-label="Возврат средств после доставки">В</span>
+            {% endif %}
+            {% if o.is_international() %}
+            <div class="ozon-order-international mt-1">Международный</div>
+            {% endif %}
+        </div>
         <div class="col-lg-2">
             <button type="button" class="ozon-posting-link btn btn-link p-0 text-start"
                     data-posting-number="{{ o.ozon_order_id }}">{{ o.ozon_order_id }}</button>
@@ -28,40 +41,33 @@
             <div class="text-muted">—</div>
             {% endif %}
         </div>
-        <div class="col-lg-2 text-lg-center">
-            <span class="ozon-status-badge ozon-status-{{ o.status_badge_class() }}">
-                {{ o.status_display() }}
-            </span>
-            {% if o.has_refund_after_delivery() %}
-            <span class="product-return-mark product-return-mark--inline"
-                  title="{{ o.refund_after_delivery_tooltip() }}"
-                  aria-label="Возврат средств после доставки">В</span>
-            {% endif %}
-            {% if o.is_international() %}
-            <div class="ozon-order-international mt-1">Международный</div>
-            {% endif %}
-        </div>
-        <div class="col-lg-1">
-            {% if o.product_image_url() %}
-            <img src="{{ o.product_image_url() }}" alt="" class="ozon-order-thumb" loading="lazy"
-                 referrerpolicy="no-referrer">
-            {% else %}
-            <div class="ozon-order-thumb ozon-order-thumb-empty" aria-hidden="true"></div>
-            {% endif %}
+        <div class="col-lg-1 text-center">
+            <div class="fbs-order-quantity">{{ o.items_quantity() }}</div>
+            <div class="text-muted small">шт.</div>
         </div>
         <div class="col-lg-2">
-            {% set cell = o.product_cell() %}
-            {% set promos = o.promotion_purchase_labels() %}
-            <div class="product-cell-title" title="{{ cell.name }}">
-                {% if promos %}
-                <span class="product-promo-mark product-promo-mark--inline"
-                      title="{{ promos|join(' · ') }}"
-                      aria-label="Куплен по акции">А</span>
+            <div class="fbs-order-product">
+                {% if o.product_image_url() %}
+                <img src="{{ o.product_image_url() }}" alt="" class="ozon-order-thumb fbs-order-product-thumb"
+                     loading="lazy" referrerpolicy="no-referrer">
+                {% else %}
+                <div class="ozon-order-thumb ozon-order-thumb-empty fbs-order-product-thumb" aria-hidden="true"></div>
                 {% endif %}
-                {{ cell.title }}
+                <div class="fbs-order-product-info">
+                    {% set cell = o.product_cell() %}
+                    {% set promos = o.promotion_purchase_labels() %}
+                    <div class="product-cell-title" title="{{ cell.name }}">
+                        {% if promos %}
+                        <span class="product-promo-mark product-promo-mark--inline"
+                              title="{{ promos|join(' · ') }}"
+                              aria-label="Куплен по акции">А</span>
+                        {% endif %}
+                        {{ cell.name }}
+                    </div>
+                    <div class="product-cell-meta font-monospace">{{ cell.offer_id }}</div>
+                    <div class="product-cell-meta font-monospace">{{ cell.barcode }}</div>
+                </div>
             </div>
-            <div class="product-cell-meta font-monospace">{{ cell.offer_id }}</div>
-            <div class="product-cell-meta font-monospace">{{ cell.barcode }}</div>
         </div>
         <div class="col-lg-2">
             <div class="fbs-order-provider">{{ o.delivery_provider() }}</div>
@@ -114,11 +120,11 @@
     </div>
     <div class="ozon-orders-card bg-white rounded-bottom">
         <div class="ozon-orders-head row g-0 d-none d-lg-flex">
+            <div class="col-lg-2 text-center">Статус</div>
             <div class="col-lg-2 text-center">Номер отправления</div>
             <div class="col-lg-1 text-center">Трек-номер</div>
-            <div class="col-lg-2 text-center">Статус</div>
-            <div class="col-lg-1 text-center">Фото</div>
-            <div class="col-lg-2 text-center">Количество, артикул / Название товара</div>
+            <div class="col-lg-1 text-center">Кол-во</div>
+            <div class="col-lg-2 text-center">Товар</div>
             <div class="col-lg-2 text-center">Служба доставки</div>
             <div class="col-lg-1 text-center">Стоимость</div>
             <div class="col-lg-1 text-center">Действие</div>
