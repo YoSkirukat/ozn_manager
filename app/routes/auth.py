@@ -1,10 +1,28 @@
 from flask import Blueprint, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required, login_user, logout_user
 
+from app.db_sqlite import LOCKED_DB_MESSAGE, db_write_with_retry
 from app.extensions import db
 from app.models import User
 
 auth_bp = Blueprint("auth", __name__)
+
+
+def _create_pending_user(*, username: str, email: str, password: str) -> None:
+    """Создаёт аккаунт, ожидающий активации администратором.
+
+    Идемпотентна: при блокировке SQLite вызывается повторно после rollback().
+    """
+    user = User(
+        username=username,
+        email=email,
+        display_name=username,
+        role=User.ROLE_USER,
+        is_active=False,
+    )
+    user.set_password(password)
+    db.session.add(user)
+    db.session.commit()
 
 
 @auth_bp.route("/login", methods=["GET", "POST"])
@@ -63,22 +81,22 @@ def register():
             for msg in errors:
                 flash(msg, "danger")
         else:
-            user = User(
-                username=username,
-                email=email,
-                display_name=username,
-                role=User.ROLE_USER,
-                is_active=False,
+            ok, _created = db_write_with_retry(
+                lambda: _create_pending_user(
+                    username=username,
+                    email=email,
+                    password=password,
+                )
             )
-            user.set_password(password)
-            db.session.add(user)
-            db.session.commit()
-            flash(
-                "Регистрация принята. Администратор активирует аккаунт — "
-                "после этого вы сможете войти.",
-                "success",
-            )
-            return redirect(url_for("auth.login"))
+            if not ok:
+                flash(LOCKED_DB_MESSAGE, "danger")
+            else:
+                flash(
+                    "Регистрация принята. Администратор активирует аккаунт — "
+                    "после этого вы сможете войти.",
+                    "success",
+                )
+                return redirect(url_for("auth.login"))
 
     return render_template("auth/register.html")
 

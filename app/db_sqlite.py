@@ -15,6 +15,14 @@ T = TypeVar("T")
 
 DEFAULT_RETRIES = 12
 DEFAULT_DELAY = 0.3
+# Записи из веб-интерфейса: короткие блокировки (синхронизация с Ozon) пережидаем
+# молча, но не держим запрос пользователя минутами.
+DEFAULT_WEB_RETRIES = 4
+DEFAULT_WEB_DELAY = 0.3
+LOCKED_DB_MESSAGE = (
+    "База данных занята: идёт синхронизация данных с Ozon. "
+    "Изменения не сохранены — повторите действие через минуту."
+)
 _WRITE_LOCK = threading.RLock()
 
 
@@ -68,3 +76,25 @@ def db_session_run(
         if last_error is not None:
             raise last_error
     raise RuntimeError("db_session_run failed without error")
+
+
+def db_write_with_retry(
+    fn: Callable[[], T],
+    *,
+    retries: int = DEFAULT_WEB_RETRIES,
+    delay: float = DEFAULT_WEB_DELAY,
+) -> tuple[bool, T | None]:
+    """Запись из веб-интерфейса с повторами при блокировке SQLite.
+
+    Возвращает (True, результат) при успехе и (False, None), если база так и
+    осталась занятой: вызывающий код показывает пользователю LOCKED_DB_MESSAGE
+    вместо страницы 500. fn() должна быть идемпотентной — при повторе она
+    вызывается заново после rollback().
+    """
+    try:
+        return True, db_session_run(fn, retries=retries, delay=delay)
+    except OperationalError as exc:
+        db.session.rollback()
+        if not is_sqlite_locked_error(exc):
+            raise
+        return False, None

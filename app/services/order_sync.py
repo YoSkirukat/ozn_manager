@@ -30,6 +30,9 @@ def _refresh_orders_financials_batch(user, orders: list[Order]) -> dict:
 
     from app.services.order_details import _product_lookup  # локальный импорт для избежания циклов
 
+    # Сбрасываем накопленные правки до сетевых вызовов: открытая транзакция держит
+    # блокировку записи SQLite и блокирует остальные записи приложения (в т.ч. админку).
+    db_session_commit()
     product_lookup = _product_lookup(user.id)
     updated = 0
     buyout_index = build_buyout_index_for_orders(user, orders)
@@ -187,6 +190,12 @@ def load_orders_from_ozon(
 
             if index % SYNC_COMMIT_BATCH == 0:
                 db_session_commit()
+
+    # Коммитим остаток пачки до обращения к финансовому API Ozon: иначе открытая
+    # транзакция держит блокировку записи SQLite всё время сетевых запросов, и любые
+    # другие записи (создание пользователя, сохранение профиля) падают с
+    # «database is locked».
+    db_session_commit()
 
     financials = {"processed": 0, "updated": 0}
     margins_recomputed = 0

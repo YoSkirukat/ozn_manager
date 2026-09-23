@@ -102,4 +102,27 @@ def create_app(config_class=Config):
             flash("Аккаунт не активирован. Обратитесь к администратору.", "warning")
             return redirect(url_for("auth.login"))
 
+    from sqlalchemy.exc import OperationalError
+
+    from app.db_sqlite import LOCKED_DB_MESSAGE, is_sqlite_locked_error
+
+    @app.errorhandler(OperationalError)
+    def handle_sqlite_locked(exc):
+        """Блокировка SQLite (идёт синхронизация) — понятный ответ вместо 500."""
+        if not is_sqlite_locked_error(exc):
+            raise exc
+
+        from flask import jsonify, render_template, request
+
+        # После неудачного flush сессия ждёт rollback: без него рендер шаблона,
+        # обращающийся к текущему пользователю, упадёт повторно.
+        try:
+            db.session.rollback()
+        except Exception:  # noqa: BLE001 — rollback не должен ломать обработку
+            pass
+
+        if request.path.startswith("/api/"):
+            return jsonify({"ok": False, "error": LOCKED_DB_MESSAGE}), 503
+        return render_template("errors/db_locked.html", message=LOCKED_DB_MESSAGE), 503
+
     return app

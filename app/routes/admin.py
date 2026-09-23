@@ -2,6 +2,7 @@ from flask import Blueprint, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 
 from app.authz import ROLE_ADMIN, ROLE_USER, admin_required
+from app.db_sqlite import LOCKED_DB_MESSAGE, db_write_with_retry
 from app.extensions import db
 from datetime import datetime
 
@@ -38,6 +39,83 @@ def _validate_user_form(*, display_name, username, email, password, role, user_i
     return errors
 
 
+def _create_user(*, display_name, username, email, password, role) -> None:
+    """Создаёт пользователя и пишет изменение в аудит.
+
+    Идемпотентна: при блокировке SQLite вызывается повторно после rollback().
+    """
+    user = User(
+        display_name=display_name,
+        username=username,
+        email=email,
+        role=role,
+        is_active=True,
+    )
+    user.set_password(password)
+    db.session.add(user)
+    db.session.flush()
+    log_change(
+        user_id=current_user.id,
+        action_type="create",
+        entity_type="user",
+        entity_id=user.id,
+        old_value=None,
+        new_value={"username": username, "display_name": display_name, "role": role},
+    )
+    db.session.commit()
+
+
+def _update_user(
+    *,
+    user_id,
+    display_name,
+    username,
+    email,
+    role,
+    password,
+    old_value,
+) -> None:
+    """Обновляет пользователя и пишет изменение в аудит (повтор при блокировке)."""
+    user = db.session.get(User, user_id)
+    user.display_name = display_name
+    user.username = username
+    user.email = email
+    user.role = role
+    if password:
+        user.set_password(password)
+    log_change(
+        user_id=current_user.id,
+        action_type="update",
+        entity_type="user",
+        entity_id=user.id,
+        old_value=old_value,
+        new_value={
+            "display_name": display_name,
+            "username": username,
+            "email": email,
+            "role": role,
+            "password_changed": bool(password),
+        },
+    )
+    db.session.commit()
+
+
+def _set_user_active(user_id, is_active: bool) -> None:
+    """Активация/блокировка аккаунта (повторяется при блокировке SQLite)."""
+    user = db.session.get(User, user_id)
+    if user:
+        user.is_active = is_active
+        db.session.commit()
+
+
+def _delete_user(user_id) -> None:
+    """Удаление аккаунта (повторяется при блокировке SQLite)."""
+    user = db.session.get(User, user_id)
+    if user:
+        db.session.delete(user)
+        db.session.commit()
+
+
 @admin_bp.route("/users", methods=["GET", "POST"])
 @login_required
 @admin_required
@@ -63,27 +141,20 @@ def users():
             for msg in errors:
                 flash(msg, "danger")
         else:
-            user = User(
-                display_name=display_name,
-                username=username,
-                email=email,
-                role=role,
-                is_active=True,
+            ok, _created = db_write_with_retry(
+                lambda: _create_user(
+                    display_name=display_name,
+                    username=username,
+                    email=email,
+                    password=password,
+                    role=role,
+                )
             )
-            user.set_password(password)
-            db.session.add(user)
-            db.session.flush()
-            log_change(
-                user_id=current_user.id,
-                action_type="create",
-                entity_type="user",
-                entity_id=user.id,
-                old_value=None,
-                new_value={"username": username, "display_name": display_name, "role": role},
-            )
-            db.session.commit()
-            flash(f"Пользователь «{display_name}» создан.", "success")
-            return redirect(url_for("admin.users"))
+            if not ok:
+                flash(LOCKED_DB_MESSAGE, "danger")
+            else:
+                flash(f"Пользователь «{display_name}» создан.", "success")
+                return redirect(url_for("admin.users"))
 
     users_list = User.query.order_by(User.created_at.desc()).all()
     return render_template("admin/users.html", users=users_list)
@@ -127,29 +198,22 @@ def edit_user(user_id):
                 "email": user.email,
                 "role": user.role,
             }
-            user.display_name = display_name
-            user.username = username
-            user.email = email
-            user.role = role
-            if password:
-                user.set_password(password)
-            log_change(
-                user_id=current_user.id,
-                action_type="update",
-                entity_type="user",
-                entity_id=user.id,
-                old_value=old_value,
-                new_value={
-                    "display_name": display_name,
-                    "username": username,
-                    "email": email,
-                    "role": role,
-                    "password_changed": bool(password),
-                },
+            ok, _updated = db_write_with_retry(
+                lambda: _update_user(
+                    user_id=user.id,
+                    display_name=display_name,
+                    username=username,
+                    email=email,
+                    role=role,
+                    password=password,
+                    old_value=old_value,
+                )
             )
-            db.session.commit()
-            flash(f"Пользователь «{display_name}» обновлён.", "success")
-            return redirect(url_for("admin.users"))
+            if not ok:
+                flash(LOCKED_DB_MESSAGE, "danger")
+            else:
+                flash(f"Пользователь «{display_name}» обновлён.", "success")
+                return redirect(url_for("admin.users"))
 
     return render_template("admin/user_edit.html", user=user)
 
@@ -165,9 +229,11 @@ def activate_user(user_id):
     if user.is_active:
         flash("Аккаунт уже активирован.", "info")
     else:
-        user.is_active = True
-        db.session.commit()
-        flash(f"Пользователь «{user.display_name or user.username}» активирован.", "success")
+        ok, _activated = db_write_with_retry(lambda: _set_user_active(user_id, True))
+        if not ok:
+            flash(LOCKED_DB_MESSAGE, "danger")
+        else:
+            flash(f"Пользователь «{user.display_name or user.username}» активирован.", "success")
     return redirect(url_for("admin.users"))
 
 
@@ -194,9 +260,11 @@ def deactivate_user(user_id):
             flash("Нельзя заблокировать единственного активного администратора.", "danger")
             return redirect(url_for("admin.users"))
 
-    user.is_active = False
-    db.session.commit()
-    flash(f"Пользователь «{user.display_name or user.username}» заблокирован.", "success")
+    ok, _deactivated = db_write_with_retry(lambda: _set_user_active(user_id, False))
+    if not ok:
+        flash(LOCKED_DB_MESSAGE, "danger")
+    else:
+        flash(f"Пользователь «{user.display_name or user.username}» заблокирован.", "success")
     return redirect(url_for("admin.users"))
 
 
@@ -220,9 +288,11 @@ def delete_user(user_id):
             return redirect(url_for("admin.users"))
 
     name = user.display_name or user.username
-    db.session.delete(user)
-    db.session.commit()
-    flash(f"Пользователь «{name}» удалён.", "success")
+    ok, _deleted = db_write_with_retry(lambda: _delete_user(user_id))
+    if not ok:
+        flash(LOCKED_DB_MESSAGE, "danger")
+    else:
+        flash(f"Пользователь «{name}» удалён.", "success")
     return redirect(url_for("admin.users"))
 
 
@@ -258,6 +328,45 @@ def _validate_release_form(
     return errors
 
 
+def _create_release(*, version, released_at, items) -> None:
+    """Сохраняет черновик версии журнала (повторяется при блокировке SQLite)."""
+    note = ReleaseNote(
+        version=version,
+        released_at=released_at,
+        items=items,
+        is_published=False,
+    )
+    db.session.add(note)
+    db.session.commit()
+
+
+def _update_release(*, note_id, version, released_at, items, publish: bool) -> None:
+    """Обновляет запись журнала, при publish — публикует её."""
+    note = db.session.get(ReleaseNote, note_id)
+    note.version = version
+    note.released_at = released_at
+    note.items = items
+    if publish:
+        note.is_published = True
+    db.session.commit()
+
+
+def _publish_release(note_id) -> None:
+    """Публикует запись журнала (повторяется при блокировке SQLite)."""
+    note = db.session.get(ReleaseNote, note_id)
+    if note:
+        note.is_published = True
+        db.session.commit()
+
+
+def _delete_release(note_id) -> None:
+    """Удаляет запись журнала (повторяется при блокировке SQLite)."""
+    note = db.session.get(ReleaseNote, note_id)
+    if note:
+        db.session.delete(note)
+        db.session.commit()
+
+
 def _load_admin_releases():
     published = (
         ReleaseNote.query.filter_by(is_published=True)
@@ -288,16 +397,14 @@ def releases():
             for msg in errors:
                 flash(msg, "danger")
         else:
-            note = ReleaseNote(
-                version=version,
-                released_at=released_at,
-                items=items,
-                is_published=False,
+            ok, _created = db_write_with_retry(
+                lambda: _create_release(version=version, released_at=released_at, items=items)
             )
-            db.session.add(note)
-            db.session.commit()
-            flash(f"Версия {version} сохранена как черновик.", "success")
-            return redirect(url_for("admin.releases"))
+            if not ok:
+                flash(LOCKED_DB_MESSAGE, "danger")
+            else:
+                flash(f"Версия {version} сохранена как черновик.", "success")
+                return redirect(url_for("admin.releases"))
 
     published, drafts = _load_admin_releases()
     return render_template("admin/releases.html", published=published, drafts=drafts)
@@ -330,17 +437,24 @@ def edit_release(note_id):
             for msg in errors:
                 flash(msg, "danger")
         else:
-            note.version = version
-            note.released_at = released_at
-            note.items = items
-            if action == "publish":
-                note.is_published = True
-                db.session.commit()
+            publish = action == "publish"
+            ok, _updated = db_write_with_retry(
+                lambda: _update_release(
+                    note_id=note.id,
+                    version=version,
+                    released_at=released_at,
+                    items=items,
+                    publish=publish,
+                )
+            )
+            if not ok:
+                flash(LOCKED_DB_MESSAGE, "danger")
+            elif publish:
                 flash(f"Версия {version} опубликована.", "success")
                 return redirect(url_for("main.changelog"))
-            db.session.commit()
-            flash(f"Версия {version} сохранена.", "success")
-            return redirect(url_for("admin.releases"))
+            else:
+                flash(f"Версия {version} сохранена.", "success")
+                return redirect(url_for("admin.releases"))
 
     items_text = "\n".join(note.items_list)
     return render_template("admin/release_edit.html", note=note, items_text=items_text)
@@ -363,8 +477,11 @@ def publish_release(note_id):
         flash("Добавьте хотя бы один пункт изменений перед публикацией.", "danger")
         return redirect(url_for("admin.edit_release", note_id=note.id))
 
-    note.is_published = True
-    db.session.commit()
+    ok, _published = db_write_with_retry(lambda: _publish_release(note_id))
+    if not ok:
+        flash(LOCKED_DB_MESSAGE, "danger")
+        return redirect(url_for("admin.releases"))
+
     flash(f"Версия {note.version} опубликована.", "success")
     return redirect(url_for("main.changelog"))
 
@@ -375,7 +492,9 @@ def publish_release(note_id):
 def delete_release(note_id):
     note = db.session.get(ReleaseNote, note_id)
     if note:
-        db.session.delete(note)
-        db.session.commit()
-        flash("Версия удалена.", "success")
+        ok, _deleted = db_write_with_retry(lambda: _delete_release(note_id))
+        if not ok:
+            flash(LOCKED_DB_MESSAGE, "danger")
+        else:
+            flash("Версия удалена.", "success")
     return redirect(url_for("admin.releases"))
