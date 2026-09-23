@@ -2,6 +2,8 @@
 
 let productCommissionModal = null;
 let productCommissionRequestSeq = 0;
+let productFbsStocksModal = null;
+let productFbsStocksRequestSeq = 0;
 
 function escapeHtml(text) {
     return String(text ?? "")
@@ -167,6 +169,124 @@ function bindProductCommissionButtons(root) {
     });
 }
 
+function resetProductFbsStocksModal() {
+    if (productFbsStocksModal) {
+        try {
+            productFbsStocksModal.hide();
+            productFbsStocksModal.dispose();
+        } catch {
+            /* modal removed from DOM */
+        }
+    }
+    productFbsStocksModal = null;
+}
+
+function renderProductFbsStocksModal(data) {
+    const product = data.product || {};
+    const titleEl = document.getElementById("productFbsStocksModalLabel");
+    const metaEl = document.getElementById("product-fbs-stocks-modal-meta");
+    const bodyEl = document.getElementById("product-fbs-stocks-modal-body");
+    const total = product.total ?? 0;
+
+    if (titleEl) {
+        titleEl.textContent = `Остатки FBS: ${total} шт.`;
+    }
+    if (metaEl) {
+        metaEl.innerHTML =
+            `<span class="font-monospace">${escapeHtml(product.offer_id || "—")}</span>` +
+            ` &middot; ${escapeHtml(product.name || "—")}` +
+            ` &middot; баркод: ${escapeHtml(product.barcode || "—")}`;
+    }
+
+    const warehouses = data.warehouses || [];
+    if (!warehouses.length) {
+        if (bodyEl) {
+            bodyEl.innerHTML =
+                '<p class="text-muted mb-0">Склады FBS не настроены. Добавьте их в ' +
+                '<a href="/profile">профиле</a> в блоке «Внешние данные».</p>';
+        }
+        return;
+    }
+
+    let html = `<div class="table-responsive">
+        <table class="table table-sm product-commission-table align-middle mb-0">
+            <thead><tr>
+                <th>Склад FBS</th>
+                <th class="text-end">Остаток</th>
+                <th class="text-end">Обновлён</th>
+            </tr></thead><tbody>`;
+
+    html += warehouses.map((warehouse) => {
+        const stockCell = warehouse.has_data
+            ? String(warehouse.stock ?? 0)
+            : '<span class="text-muted">—</span>';
+        const updatedCell = warehouse.has_data
+            ? escapeHtml(warehouse.updated_at_display || "—")
+            : '<span class="text-muted">нет данных</span>';
+        return `<tr>
+            <td>${escapeHtml(warehouse.label || warehouse.warehouse_name || "—")}</td>
+            <td class="text-end text-nowrap fw-semibold">${stockCell}</td>
+            <td class="text-end text-nowrap small text-muted">${updatedCell}</td>
+        </tr>`;
+    }).join("");
+
+    html += `<tr class="product-commission-total-row">
+            <td class="fw-semibold">Всего</td>
+            <td class="text-end text-nowrap fw-bold">${total}</td>
+            <td></td>
+        </tr>`;
+    html += "</tbody></table></div>";
+
+    if (bodyEl) bodyEl.innerHTML = html;
+}
+
+async function openProductFbsStocks(productId) {
+    const modalEl = document.getElementById("product-fbs-stocks-modal");
+    const bodyEl = document.getElementById("product-fbs-stocks-modal-body");
+    if (!modalEl || !productId) return;
+
+    const seq = ++productFbsStocksRequestSeq;
+    productFbsStocksModal = bootstrap.Modal.getOrCreateInstance(modalEl);
+
+    if (bodyEl) {
+        bodyEl.innerHTML = '<div class="text-center text-muted py-4">Загрузка…</div>';
+    }
+    productFbsStocksModal.show();
+
+    try {
+        const url = `/api/products/${encodeURIComponent(productId)}/fbs-stocks`;
+        const res = await fetch(url, { headers: { "X-Requested-With": "XMLHttpRequest" } });
+        const data = await res.json();
+        if (seq !== productFbsStocksRequestSeq) return;
+
+        if (!data.ok) {
+            const err = escapeHtml(data.error || "Не удалось загрузить остатки по складам");
+            if (bodyEl) {
+                bodyEl.innerHTML = `<div class="alert alert-warning mb-0">${err}</div>`;
+            }
+            return;
+        }
+        renderProductFbsStocksModal(data);
+    } catch (err) {
+        if (seq !== productFbsStocksRequestSeq) return;
+        if (bodyEl) {
+            bodyEl.innerHTML =
+                `<div class="alert alert-danger mb-0">${escapeHtml(err.message)}</div>`;
+        }
+    }
+}
+
+function bindProductFbsStockButtons(root) {
+    const scope = root || document;
+    scope.querySelectorAll(".product-fbs-stock-btn").forEach((btn) => {
+        if (btn.dataset.bound === "1") return;
+        btn.dataset.bound = "1";
+        btn.addEventListener("click", () => {
+            openProductFbsStocks(btn.dataset.productId);
+        });
+    });
+}
+
 function renderProfitMarkupCell(cell, profitRows) {
     if (!cell) return;
     if (!profitRows || !profitRows.length) {
@@ -306,12 +426,19 @@ function initProductsPage() {
     }
 
     bindProductCommissionButtons(document);
+    bindProductFbsStockButtons(document);
     bindProductPurchasePriceInputs(document);
 
     const commissionModalEl = document.getElementById("product-commission-modal");
     if (commissionModalEl && commissionModalEl.dataset.bound !== "1") {
         commissionModalEl.dataset.bound = "1";
         commissionModalEl.addEventListener("hidden.bs.modal", resetProductCommissionModal);
+    }
+
+    const fbsStocksModalEl = document.getElementById("product-fbs-stocks-modal");
+    if (fbsStocksModalEl && fbsStocksModalEl.dataset.bound !== "1") {
+        fbsStocksModalEl.dataset.bound = "1";
+        fbsStocksModalEl.addEventListener("hidden.bs.modal", resetProductFbsStocksModal);
     }
 }
 

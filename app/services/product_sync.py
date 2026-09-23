@@ -19,7 +19,10 @@ from app.services.purchase_prices import apply_purchase_prices
 
 
 def _preserve_external_fbs_stocks(user) -> bool:
-    return bool((getattr(user, "fbs_stocks_url", None) or "").strip())
+    """Остатки FBS ведутся из файлов по складам, синхронизация товаров их не затирает."""
+    from app.services.fbs_stocks import collect_fbs_sources
+
+    return bool(collect_fbs_sources(user))
 
 
 def sync_products_from_ozon(user) -> dict:

@@ -1059,6 +1059,28 @@ body {
     background-color: #f3f4f6;
 }
 
+.fbs-stock-source-row {
+    align-items: flex-start;
+}
+
+.fbs-stock-source-field {
+    flex: 1 1 220px;
+    min-width: 200px;
+}
+
+.fbs-stock-source-field.is-hidden {
+    display: none;
+}
+
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+}
+
 .table>thead {
     vertical-align: bottom;
     position: sticky;

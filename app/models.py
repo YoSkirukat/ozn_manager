@@ -10,6 +10,10 @@ def utcnow():
     return datetime.now(timezone.utc)
 
 
+# Метка в Product.raw_data: Ozon отказал в остатках, т.к. товар в архиве.
+FBS_ARCHIVED_SKIP_KEY = "fbs_archived_stock_skip"
+
+
 class User(UserMixin, db.Model):
     __tablename__ = "users"
 
@@ -76,6 +80,12 @@ class User(UserMixin, db.Model):
         back_populates="user",
         cascade="all, delete-orphan",
     )
+    fbs_stock_sources = db.relationship(
+        "FbsStockSource",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        order_by="FbsStockSource.id",
+    )
 
     def set_password(self, password: str) -> None:
         self.password_hash = generate_password_hash(password)
@@ -123,9 +133,40 @@ class Product(db.Model):
     last_sync = db.Column(db.DateTime(timezone=True), nullable=True)
 
     user = db.relationship("User", back_populates="products")
+    fbs_stocks = db.relationship(
+        "ProductFbsStock",
+        back_populates="product",
+        cascade="all, delete-orphan",
+    )
 
     def barcode_display(self) -> str:
         return self.barcode or "—"
+
+    def is_archived_in_ozon(self) -> bool:
+        """Товар в архиве Ozon: остатки FBS по нему выгрузить нельзя.
+
+        Учитываем только явный архив (`is_archived`): автоархив (`is_autoarchived`)
+        снимается обновлением остатка, поэтому такие товары выгружаем как обычно.
+        """
+        raw = self.raw_data if isinstance(self.raw_data, dict) else {}
+        if raw.get("is_archived"):
+            return True
+        return bool(raw.get(FBS_ARCHIVED_SKIP_KEY))
+
+    def mark_fbs_archived_stock_skip(self) -> None:
+        """Запоминает отказ Ozon «archived product», чтобы не повторять выгрузку.
+
+        Метка живёт до следующей синхронизации товаров: она перезаписывает raw_data
+        свежими данными кабинета, и товар проверяется заново.
+        """
+        raw = dict(self.raw_data) if isinstance(self.raw_data, dict) else {}
+        raw[FBS_ARCHIVED_SKIP_KEY] = utcnow().isoformat()
+        self.raw_data = raw
+
+    def ozon_offer_label(self) -> str:
+        """Короткое имя товара для сообщений журнала."""
+        offer = str(self.offer_id or "").strip()
+        return offer or str(self.name or "").strip() or f"ID {self.ozon_product_id}"
 
     def ozon_marketplace_product_slug(self) -> str | None:
         text = str(self.barcode or "").strip()
@@ -997,3 +1038,86 @@ class PriceExperimentSnapshot(db.Model):
     created_at = db.Column(db.DateTime(timezone=True), default=utcnow, nullable=False)
 
     item = db.relationship("PriceExperimentItem", back_populates="snapshots")
+
+
+class FbsStockSource(db.Model):
+    """Источник остатков FBS: FBS-склад Ozon и ссылка на файл с остатками."""
+
+    __tablename__ = "fbs_stock_sources"
+    __table_args__ = (
+        db.UniqueConstraint("user_id", "warehouse_id", name="uq_fbs_stock_source_user_warehouse"),
+    )
+
+    # Пустой warehouse_id — автовыбор: берётся единственный активный склад кабинета.
+    AUTO_WAREHOUSE_ID = ""
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(
+        db.Integer,
+        db.ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    warehouse_id = db.Column(db.String(64), nullable=False, default=AUTO_WAREHOUSE_ID)
+    warehouse_name = db.Column(db.String(256), nullable=True)
+    stocks_url = db.Column(db.String(1024), nullable=True)
+    created_at = db.Column(db.DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at = db.Column(
+        db.DateTime(timezone=True),
+        default=utcnow,
+        onupdate=utcnow,
+        nullable=False,
+    )
+
+    user = db.relationship("User", back_populates="fbs_stock_sources")
+
+    def warehouse_id_int(self) -> int | None:
+        try:
+            return int(str(self.warehouse_id).strip())
+        except (TypeError, ValueError):
+            return None
+
+    def warehouse_label(self) -> str:
+        name = (self.warehouse_name or "").strip()
+        if not self.warehouse_id:
+            return name or "Автовыбор FBS-склада"
+        if name:
+            return f"{name} ({self.warehouse_id})"
+        return f"Склад {self.warehouse_id}"
+
+
+class ProductFbsStock(db.Model):
+    """Остаток товара на конкретном FBS-складе (из файла остатков)."""
+
+    __tablename__ = "product_fbs_stocks"
+    __table_args__ = (
+        db.UniqueConstraint(
+            "product_id",
+            "warehouse_id",
+            name="uq_product_fbs_stock_product_warehouse",
+        ),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(
+        db.Integer,
+        db.ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    product_id = db.Column(
+        db.Integer,
+        db.ForeignKey("products.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    warehouse_id = db.Column(db.String(64), nullable=False, default="")
+    stock = db.Column(db.Integer, nullable=False, default=0)
+    updated_at = db.Column(
+        db.DateTime(timezone=True),
+        default=utcnow,
+        onupdate=utcnow,
+        nullable=False,
+    )
+
+    product = db.relationship("Product", back_populates="fbs_stocks")

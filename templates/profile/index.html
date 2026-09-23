@@ -116,7 +116,8 @@
                 <p class="text-muted small mb-3">
                     Укажите ссылки на XLS/XLSX. Поддерживаются прямые ссылки и таблицы Google Sheets.
                     Закупочные цены: колонки <strong>Баркод</strong> и <strong>Цена закуп</strong>
-                    (можно загрузить вручную). Остатки FBS: колонки <strong>Баркод</strong> и <strong>Остаток FBS</strong>.
+                    (можно загрузить вручную). Остатки FBS: колонки <strong>Баркод</strong> и
+                    <strong>Остаток FBS</strong> — для каждого склада FBS свой файл.
                 </p>
                 <form method="post" action="{{ url_for('profile.save_external') }}">
                     <div class="mb-3">
@@ -125,23 +126,113 @@
                                value="{{ current_user.purchase_prices_url or '' }}"
                                placeholder="https://...">
                     </div>
-                    <div class="mb-3">
-                        <label class="form-label" for="fbs_stocks_url">Остатки для FBS</label>
-                        <input class="form-control" id="fbs_stocks_url" name="fbs_stocks_url" type="url"
-                               value="{{ current_user.fbs_stocks_url or '' }}"
-                               placeholder="https://...">
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label" for="fbs_warehouse_id">Склад FBS (warehouse_id)</label>
-                        <input class="form-control font-monospace" id="fbs_warehouse_id" name="fbs_warehouse_id"
-                               type="text" inputmode="numeric"
-                               value="{{ current_user.fbs_warehouse_id or '' }}"
-                               placeholder="Необязательно, если склад один">
+                    {% set known_warehouse_ids = fbs_warehouses|map(attribute='warehouse_id')|map('string')|list %}
+                    <div class="mb-3" id="fbs-stock-sources-block">
+                        <label class="form-label">Остатки FBS по складам</label>
+                        <p class="text-muted small mb-2">
+                            Для каждого склада FBS укажите ссылку на файл с остатками: остатки
+                            выгружаются в Ozon по выбранному складу, а в колонке «Остаток FBS»
+                            на странице «Товары» видно разбивку по складам.
+                        </p>
+
+                        {% if fbs_warehouses_error %}
+                        <div class="alert alert-warning py-2 small">
+                            Не удалось получить список складов из Ozon: {{ fbs_warehouses_error }}.
+                            Уже добавленные склады можно сохранить.
+                        </div>
+                        {% elif not current_user.has_ozon_credentials() %}
+                        <div class="alert alert-light border py-2 small">
+                            Подключите Ozon API, чтобы выбрать склад FBS из кабинета.
+                        </div>
+                        {% endif %}
+
+                        <div id="fbs-stock-sources">
+                            {% for source in fbs_sources %}
+                            <div class="fbs-stock-source-row d-flex flex-wrap gap-2 mb-2">
+                                <div class="fbs-stock-source-field">
+                                    <select class="form-select form-select-sm fbs-stock-source-select"
+                                            name="fbs_warehouse_id[]" aria-label="Склад FBS">
+                                        <option value="">Выберите склад FBS</option>
+                                        {% for warehouse in fbs_warehouses %}
+                                        <option value="{{ warehouse.warehouse_id }}"
+                                                data-warehouse-name="{{ warehouse.name }}"
+                                                {% if source.warehouse_id == warehouse.warehouse_id|string %}selected{% endif %}>
+                                            {{ warehouse.name }} ({{ warehouse.warehouse_id }})
+                                        </option>
+                                        {% endfor %}
+                                        {% if source.warehouse_id and source.warehouse_id not in known_warehouse_ids %}
+                                        <option value="{{ source.warehouse_id }}"
+                                                data-warehouse-name="{{ source.warehouse_name or '' }}" selected>
+                                            {{ source.warehouse_label() }} — нет в списке Ozon
+                                        </option>
+                                        {% endif %}
+                                        <option value="{{ fbs_auto_warehouse_value }}" data-warehouse-name=""
+                                                {% if not source.warehouse_id %}selected{% endif %}>
+                                            Автовыбор (если FBS-склад один)
+                                        </option>
+                                    </select>
+                                </div>
+                                <div class="fbs-stock-source-field fbs-stock-source-url-field">
+                                    <input class="form-control form-control-sm fbs-stock-source-url"
+                                           name="fbs_stocks_url[]" type="url"
+                                           value="{{ source.stocks_url or '' }}"
+                                           placeholder="https://... остатки FBS"
+                                           aria-label="Ссылка на файл остатков FBS">
+                                </div>
+                                <input type="hidden" name="fbs_warehouse_name[]"
+                                       class="fbs-stock-source-name"
+                                       value="{{ source.warehouse_name or '' }}">
+                                <button type="button" class="btn btn-outline-danger btn-sm fbs-stock-source-remove"
+                                        title="Удалить склад" aria-label="Удалить склад">
+                                    <i class="bi bi-trash" aria-hidden="true"></i>
+                                </button>
+                            </div>
+                            {% endfor %}
+                        </div>
+
+                        <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
+                            <button type="button" class="btn btn-outline-primary btn-sm" id="btn-add-fbs-warehouse">
+                                <i class="bi bi-plus-lg" aria-hidden="true"></i>
+                                Добавить склад FBS
+                            </button>
+                        </div>
                         <div class="form-text">
-                            Нужен только при нескольких FBS-складах. ID склада из Ozon
-                            (метод <code>/v2/warehouse/list</code>).
+                            Нажмите «Добавить склад FBS», выберите склад в списке и укажите ссылку
+                            на файл с остатками. Настроек может быть сколько угодно.
                         </div>
                     </div>
+                    <template id="fbs-stock-source-template">
+                        <div class="fbs-stock-source-row d-flex flex-wrap gap-2 mb-2">
+                            <div class="fbs-stock-source-field">
+                                <select class="form-select form-select-sm fbs-stock-source-select"
+                                        name="fbs_warehouse_id[]" aria-label="Склад FBS">
+                                    <option value="">Выберите склад FBS</option>
+                                    {% for warehouse in fbs_warehouses %}
+                                    <option value="{{ warehouse.warehouse_id }}"
+                                            data-warehouse-name="{{ warehouse.name }}">
+                                        {{ warehouse.name }} ({{ warehouse.warehouse_id }})
+                                    </option>
+                                    {% endfor %}
+                                    <option value="{{ fbs_auto_warehouse_value }}" data-warehouse-name="">
+                                        Автовыбор (если FBS-склад один)
+                                    </option>
+                                </select>
+                            </div>
+                            <div class="fbs-stock-source-field fbs-stock-source-url-field is-hidden">
+                                <input class="form-control form-control-sm fbs-stock-source-url"
+                                       name="fbs_stocks_url[]" type="url"
+                                       placeholder="https://... остатки FBS"
+                                       aria-label="Ссылка на файл остатков FBS">
+                            </div>
+                            <input type="hidden" name="fbs_warehouse_name[]"
+                                   class="fbs-stock-source-name" value="">
+                            <button type="button" class="btn btn-outline-danger btn-sm fbs-stock-source-remove"
+                                    title="Удалить склад" aria-label="Удалить склад">
+                                <i class="bi bi-trash" aria-hidden="true"></i>
+                            </button>
+                        </div>
+                    </template>
+
                     <div class="d-flex flex-wrap gap-2 align-items-center">
                         <button class="btn btn-primary" type="submit">Сохранить</button>
                         <button type="button" class="btn btn-outline-primary" id="btn-upload-purchase-prices">
@@ -161,7 +252,7 @@
                 <p class="text-muted small mb-3">
                     Автоматическая загрузка данных из Ozon по расписанию. Планировщик встроен в приложение
                     (без cron). Заказы — за 30 дней, поставки — за 21 день, остатки FBO — срез по складам,
-                    остатки FBS — из файла по ссылке в блоке «Внешние данные»,
+                    остатки FBS — из файлов по складам в блоке «Внешние данные»,
                     товары — полная синхронизация каталога и закупочных цен.
                 </p>
                 <div id="scheduled-tasks-scheduler-warn" class="alert alert-warning d-none small py-2 mb-2" role="alert"></div>

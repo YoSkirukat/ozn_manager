@@ -106,7 +106,18 @@
                         {% endif %}
                     </td>
                     <td class="text-center">{{ p.stock_fbo }}</td>
-                    <td class="text-center">{{ p.stock_fbs }}</td>
+                    <td class="text-center">
+                        {% if has_fbs_sources %}
+                        <button type="button" class="btn btn-link btn-sm p-0 product-fbs-stock-btn"
+                                data-product-id="{{ p.id }}"
+                                title="Показать остатки по складам FBS">
+                            {{ p.stock_fbs }}
+                        </button>
+                        {% else %}
+                        <span data-product-fbs-total="{{ p.stock_fbs }}"
+                              title="Добавьте склады FBS в профиле, чтобы видеть разбивку по складам">{{ p.stock_fbs }}</span>
+                        {% endif %}
+                    </td>
                     <td class="text-end text-nowrap">
                         {% if p.has_commission_detail('fbo') %}
                         <button type="button" class="btn btn-link btn-sm p-0 product-commission-btn"
@@ -142,6 +153,24 @@
         Товаров пока нет. Нажмите «Синхронизировать из OZON», чтобы загрузить каталог из кабинета.
     </div>
     {% endif %}
+
+    <div class="modal fade" id="product-fbs-stocks-modal" tabindex="-1"
+         aria-labelledby="productFbsStocksModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div class="min-w-0">
+                        <h5 class="modal-title mb-1" id="productFbsStocksModalLabel">Остатки FBS по складам</h5>
+                        <div class="small text-muted" id="product-fbs-stocks-modal-meta"></div>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+                </div>
+                <div class="modal-body" id="product-fbs-stocks-modal-body">
+                    <div class="text-center text-muted py-4">Загрузка…</div>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <div class="modal fade" id="product-commission-modal" tabindex="-1" aria-labelledby="productCommissionModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-lg modal-dialog-scrollable">

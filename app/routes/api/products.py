@@ -3,6 +3,7 @@ from flask_login import current_user, login_required
 
 from app.extensions import db
 from app.models import Product
+from app.services.fbs_stocks import product_fbs_stock_breakdown
 from app.services.product_commissions import commission_detail_for_api
 from app.services.product_sync import sync_products_from_ozon
 from app.services.purchase_prices import _parse_price, apply_purchase_prices_from_content
@@ -76,6 +77,17 @@ def update_purchase_price(product_id: int):
         "can_show_profit_markup": product.can_show_profit_markup(),
         "profit_rows": profit_rows,
     })
+
+
+@products_api_bp.route("/products/<int:product_id>/fbs-stocks", methods=["GET"])
+@login_required
+def product_fbs_stocks(product_id: int):
+    product = Product.query.filter_by(id=product_id, user_id=current_user.id).first()
+    if not product:
+        return jsonify({"ok": False, "error": "Товар не найден."}), 404
+
+    data = product_fbs_stock_breakdown(current_user, product)
+    return jsonify({"ok": True, **data})
 
 
 @products_api_bp.route("/products/<int:product_id>/commission", methods=["GET"])

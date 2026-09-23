@@ -119,6 +119,7 @@ def products():
             product_promo_prices = {}
 
     from app.services.product_actions import attach_product_sale_prices
+    from app.services.fbs_stocks import list_fbs_stock_sources
 
     attach_product_sale_prices(items, product_promo_prices)
     return _render_page(
@@ -127,6 +128,7 @@ def products():
         product_actions=product_actions,
         product_promo_prices=product_promo_prices,
         has_ozon=current_user.has_ozon_credentials(),
+        has_fbs_sources=bool(list_fbs_stock_sources(current_user.id)),
     )
 
 

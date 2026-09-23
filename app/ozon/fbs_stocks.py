@@ -17,6 +17,14 @@ TOO_FREQUENT_MARKERS = (
     "stock_update_too_frequently",
     "stocks_update_too_frequently",
 )
+# Ozon не принимает остатки по товарам в архиве — это не ошибка выгрузки,
+# такие позиции просто пропускаем и сообщаем об этом в журнале.
+ARCHIVED_MARKERS = (
+    "archived product",
+    "archived_product",
+    "product is archived",
+    "can't set positive stock to archived",
+)
 
 
 def fetch_fbs_warehouses(client_id: str, api_key: str) -> list[dict]:
@@ -66,7 +74,7 @@ def resolve_fbs_warehouse_id(client_id: str, api_key: str, preferred_id: int | N
     if not warehouses:
         raise RuntimeError(
             "В Ozon не найдено ни одного FBS-склада. "
-            "Укажите warehouse_id в профиле (поле «Склад FBS»)."
+            "Добавьте склад FBS в профиле (блок «Внешние данные»)."
         )
 
     if len(warehouses) == 1:
@@ -74,8 +82,8 @@ def resolve_fbs_warehouse_id(client_id: str, api_key: str, preferred_id: int | N
 
     names = ", ".join(f"{w['name']} ({w['warehouse_id']})" for w in warehouses)
     raise RuntimeError(
-        "У кабинета несколько FBS-складов. Укажите warehouse_id в профиле "
-        f"(поле «Склад FBS») или оставьте один активный склад. Найдены: {names}."
+        "У кабинета несколько FBS-складов. Выберите склад FBS в профиле "
+        f"(блок «Внешние данные») или оставьте один активный склад. Найдены: {names}."
     )
 
 
@@ -94,6 +102,23 @@ def _is_too_frequent_message(text: str) -> bool:
     return any(marker in lowered for marker in TOO_FREQUENT_MARKERS)
 
 
+def _is_archived_message(text: str) -> bool:
+    lowered = text.lower()
+    return any(marker in lowered for marker in ARCHIVED_MARKERS)
+
+
+def _item_label(item: dict) -> str:
+    for key in ("offer_id", "product_id"):
+        value = item.get(key)
+        if value not in (None, ""):
+            return str(value)
+    product = item.get("product")
+    offer = getattr(product, "offer_id", None)
+    if offer:
+        return str(offer)
+    return "?"
+
+
 def _row_error_messages(row: dict) -> list[str]:
     messages: list[str] = []
     for err in row.get("errors") or []:
@@ -109,8 +134,11 @@ def _send_stocks_batch(
     api_key: str,
     warehouse_id: int,
     batch: list[dict],
-) -> tuple[list[dict], list[dict], list[str]]:
-    """Отправляет один батч. Возвращает (успешные items, too_frequent items, прочие ошибки)."""
+) -> tuple[list[dict], list[dict], list[dict], list[str]]:
+    """Отправляет один батч.
+
+    Возвращает (успешные items, too_frequent items, archived items, прочие ошибки).
+    """
     stocks_payload = []
     prepared: list[dict] = []
     hard_errors: list[str] = []
@@ -140,7 +168,7 @@ def _send_stocks_batch(
         prepared.append(item)
 
     if not stocks_payload:
-        return [], [], hard_errors
+        return [], [], [], hard_errors
 
     data = _post(client_id, api_key, "/v2/products/stocks", {"stocks": stocks_payload})
     results = data.get("result") or []
@@ -148,6 +176,7 @@ def _send_stocks_batch(
     by_key = {_item_key(item): item for item in prepared if _item_key(item)}
     updated_items: list[dict] = []
     too_frequent_items: list[dict] = []
+    archived_items: list[dict] = []
 
     for idx, row in enumerate(results):
         if not isinstance(row, dict):
@@ -173,10 +202,13 @@ def _send_stocks_batch(
             if item is not None:
                 too_frequent_items.append(item)
             hard_errors.append(f"{label}: {joined}")
+        elif messages and all(_is_archived_message(m) for m in messages):
+            if item is not None:
+                archived_items.append({**item, "ozon_error": joined})
         else:
             hard_errors.append(f"{label}: {joined}")
 
-    return updated_items, too_frequent_items, hard_errors
+    return updated_items, too_frequent_items, archived_items, hard_errors
 
 
 def _push_stocks(
@@ -184,23 +216,25 @@ def _push_stocks(
     api_key: str,
     warehouse_id: int,
     items: list[dict],
-) -> tuple[list[dict], list[dict], list[str]]:
+) -> tuple[list[dict], list[dict], list[dict], list[str]]:
     updated_items: list[dict] = []
     too_frequent_items: list[dict] = []
+    archived_items: list[dict] = []
     errors: list[str] = []
 
     for start in range(0, len(items), STOCKS_BATCH_SIZE):
         batch = items[start : start + STOCKS_BATCH_SIZE]
-        batch_updated, batch_frequent, batch_errors = _send_stocks_batch(
+        batch_updated, batch_frequent, batch_archived, batch_errors = _send_stocks_batch(
             client_id, api_key, warehouse_id, batch
         )
         updated_items.extend(batch_updated)
         too_frequent_items.extend(batch_frequent)
+        archived_items.extend(batch_archived)
         errors.extend(batch_errors)
         if start + STOCKS_BATCH_SIZE < len(items):
             time.sleep(STOCKS_BATCH_PAUSE_SEC)
 
-    return updated_items, too_frequent_items, errors
+    return updated_items, too_frequent_items, archived_items, errors
 
 
 def update_fbs_stocks(
@@ -219,11 +253,13 @@ def update_fbs_stocks(
             "updated": 0,
             "failed": 0,
             "deferred": 0,
+            "archived": 0,
             "errors": [],
             "updated_items": [],
+            "archived_items": [],
         }
 
-    updated_items, too_frequent_items, errors = _push_stocks(
+    updated_items, too_frequent_items, archived_items, errors = _push_stocks(
         client_id, api_key, warehouse_id, items
     )
 
@@ -235,10 +271,11 @@ def update_fbs_stocks(
             TOO_FREQUENT_RETRY_DELAY_SEC,
         )
         time.sleep(TOO_FREQUENT_RETRY_DELAY_SEC)
-        retry_updated, still_frequent, retry_errors = _push_stocks(
+        retry_updated, still_frequent, retry_archived, retry_errors = _push_stocks(
             client_id, api_key, warehouse_id, too_frequent_items
         )
         updated_items.extend(retry_updated)
+        archived_items.extend(retry_archived)
         too_frequent_items = still_frequent
         # Убираем старые сообщения too frequent, оставляем финальные.
         errors = [e for e in errors if not _is_too_frequent_message(e)]
@@ -246,7 +283,8 @@ def update_fbs_stocks(
 
     hard_failed = len(errors) - sum(1 for e in errors if _is_too_frequent_message(e))
     deferred = len(too_frequent_items)
-    # Считаем «жёсткими» только ошибки не про частоту; частота — отложенный повтор.
+    # Считаем «жёсткими» только ошибки не про частоту; частота — отложенный повтор,
+    # товары в архиве Ozon — не ошибка, а пропуск.
     failed = hard_failed + deferred
     only_deferred = failed > 0 and hard_failed == 0
 
@@ -255,7 +293,9 @@ def update_fbs_stocks(
         "updated": len(updated_items),
         "failed": failed,
         "deferred": deferred,
+        "archived": len(archived_items),
         "errors": errors[:20],
         "updated_items": updated_items,
+        "archived_items": archived_items,
         "only_deferred": only_deferred,
     }

@@ -4,9 +4,62 @@ from flask_login import current_user, login_required
 from app.extensions import db
 from app.models import utcnow
 from app.ozon.client import check_seller_credentials
+from app.ozon.fbs_stocks import fetch_fbs_warehouses
 from app.services.change_log import log_change
+from app.services.fbs_stocks import list_fbs_stock_sources, save_fbs_stock_sources
 
 profile_bp = Blueprint("profile", __name__)
+
+FBS_AUTO_WAREHOUSE_VALUE = "auto"
+
+
+def _load_fbs_warehouses(user) -> tuple[list[dict], str | None]:
+    """FBS-склады кабинета и ошибка загрузки (для блока «Внешние данные»)."""
+    if not user.has_ozon_credentials():
+        return [], None
+    try:
+        return fetch_fbs_warehouses(user.ozon_client_id, user.ozon_api_key), None
+    except Exception as exc:  # noqa: BLE001 — список складов некритичен для профиля
+        return [], str(exc)
+
+
+def _render_profile():
+    warehouses, warehouses_error = _load_fbs_warehouses(current_user)
+    return render_template(
+        "profile/index.html",
+        fbs_warehouses=warehouses,
+        fbs_warehouses_error=warehouses_error,
+        fbs_sources=list_fbs_stock_sources(current_user.id),
+        fbs_auto_warehouse_value=FBS_AUTO_WAREHOUSE_VALUE,
+    )
+
+
+def _save_fbs_sources_from_form() -> dict:
+    """Собирает настройки остатков FBS из формы профиля и сохраняет их."""
+    warehouse_ids = request.form.getlist("fbs_warehouse_id[]")
+    warehouse_names = request.form.getlist("fbs_warehouse_name[]")
+    stocks_urls = request.form.getlist("fbs_stocks_url[]")
+
+    warehouses, _ = _load_fbs_warehouses(current_user)
+    known_names = {
+        str(item.get("warehouse_id")): str(item.get("name") or "")
+        for item in warehouses
+    }
+
+    rows: list[dict] = []
+    for index, warehouse_id in enumerate(warehouse_ids):
+        warehouse_key = (warehouse_id or "").strip()
+        name = known_names.get(warehouse_key)
+        if name is None:
+            name = warehouse_names[index] if index < len(warehouse_names) else ""
+        rows.append(
+            {
+                "warehouse_id": warehouse_key,
+                "warehouse_name": name,
+                "stocks_url": stocks_urls[index] if index < len(stocks_urls) else "",
+            }
+        )
+    return save_fbs_stock_sources(current_user, rows)
 
 
 def _ozon_snapshot(user) -> dict:
@@ -76,7 +129,7 @@ def index():
         db.session.commit()
         return redirect(url_for("profile.index"))
 
-    return render_template("profile/index.html")
+    return _render_profile()
 
 
 @profile_bp.route("/profile/ozon/check", methods=["POST"])
@@ -109,17 +162,16 @@ def check_ozon():
 @login_required
 def save_external():
     purchase_url = (request.form.get("purchase_prices_url") or "").strip()
-    fbs_stocks_url = (request.form.get("fbs_stocks_url") or "").strip()
-    fbs_warehouse_raw = (request.form.get("fbs_warehouse_id") or "").strip()
+
+    sources_result = _save_fbs_sources_from_form()
+    if not sources_result.get("ok"):
+        flash(sources_result.get("error") or "Не удалось сохранить склады FBS.", "warning")
+        return redirect(url_for("profile.index"))
+
     current_user.purchase_prices_url = purchase_url or None
-    current_user.fbs_stocks_url = fbs_stocks_url or None
-    if fbs_warehouse_raw:
-        if not fbs_warehouse_raw.isdigit():
-            flash("warehouse_id склада FBS должен быть числом.", "warning")
-            return redirect(url_for("profile.index"))
-        current_user.fbs_warehouse_id = fbs_warehouse_raw
-    else:
-        current_user.fbs_warehouse_id = None
+    # Одиночная настройка остатков FBS больше не используется: остатки ведутся по складам.
+    current_user.fbs_stocks_url = None
+    current_user.fbs_warehouse_id = None
     db.session.commit()
 
     messages = []
@@ -127,15 +179,31 @@ def save_external():
         messages.append("ссылка на закупочные цены сохранена")
     else:
         messages.append("ссылка на закупочные цены удалена")
-    if fbs_stocks_url:
-        messages.append("ссылка «Остатки для FBS» сохранена")
+
+    saved = int(sources_result.get("saved") or 0)
+    if saved:
+        messages.append(f"складов FBS сохранено: {saved}")
     else:
-        messages.append("ссылка «Остатки для FBS» удалена")
-    if fbs_warehouse_raw:
-        messages.append(f"склад FBS {fbs_warehouse_raw} сохранён")
-    else:
-        messages.append("склад FBS сброшен (автовыбор)")
+        messages.append("склады FBS не заданы")
+
+    removed = int(sources_result.get("removed") or 0)
+    if removed:
+        messages.append(f"удалено складов FBS: {removed}")
+
     flash("Внешние данные: " + "; ".join(messages) + ".", "success")
+
+    skipped_without_url = int(sources_result.get("skipped_without_url") or 0)
+    duplicates = int(sources_result.get("duplicates") or 0)
+    warnings = []
+    if skipped_without_url:
+        warnings.append(
+            f"без ссылки на файл остатков пропущено складов: {skipped_without_url}"
+        )
+    if duplicates:
+        warnings.append(f"повторяющихся складов пропущено: {duplicates}")
+    if warnings:
+        flash("Остатки FBS: " + "; ".join(warnings) + ".", "warning")
+
     return redirect(url_for("profile.index"))
 
 
