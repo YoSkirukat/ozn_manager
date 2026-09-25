@@ -1747,6 +1747,37 @@ body {
     min-width: 0;
 }
 
+/* В отправлении несколько разных товаров — каждый показываем отдельной строкой */
+.fbs-order-products,
+.order-products {
+    display: flex;
+    flex-direction: column;
+}
+
+.fbs-order-products--multi,
+.order-products--multi {
+    gap: 0.45rem;
+}
+
+.fbs-order-products--multi .fbs-order-product + .fbs-order-product,
+.order-products--multi .order-products-item + .order-products-item {
+    border-top: 1px dashed #e5e7eb;
+    padding-top: 0.45rem;
+}
+
+.fbs-order-products--multi .fbs-order-product-thumb {
+    width: 40px;
+    height: 50px;
+}
+
+/* Количество конкретного товара в строке (когда товаров в отправлении несколько) */
+.order-product-qty {
+    font-weight: 700;
+    color: #111827;
+    margin-right: 0.2rem;
+    white-space: nowrap;
+}
+
 /* Отметка «этикетка уже скачана» (внутри кнопки после названия) */
 .fbs-label-btn {
     white-space: nowrap;

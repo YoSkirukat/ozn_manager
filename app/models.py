@@ -473,23 +473,43 @@ class Order(db.Model):
 
         return resolve_thumbnail_url(self.user_id, raw)
 
-    def product_cell(self) -> dict:
-        cached = getattr(self, "_product_cell", None)
-        if isinstance(cached, dict):
+    def product_cells(self) -> list[dict]:
+        """Все товары отправления для колонки «Товар» в списках заказов.
+
+        В одном отправлении Ozon может быть несколько разных товаров — показываем
+        каждый, иначе оператор видит только первую позицию.
+        """
+        cached = getattr(self, "_product_cells", None)
+        if isinstance(cached, list) and cached:
             return cached
 
         from app.services.order_details import attach_order_product_cells
 
         attach_order_product_cells([self], self.user_id)
+        cached = getattr(self, "_product_cells", None)
+        if isinstance(cached, list):
+            return cached
+
+        return []
+
+    def product_cell(self) -> dict:
         cached = getattr(self, "_product_cell", None)
         if isinstance(cached, dict):
             return cached
 
+        cells = self.product_cells()
+        if cells:
+            return cells[0]
+
         return {
             "title": "—",
             "name": "—",
+            "quantity": 0,
             "offer_id": "—",
             "barcode": "—",
+            "thumbnail_url": None,
+            "in_promotion": False,
+            "promotion_titles": [],
         }
 
     def promotion_purchase_info(self) -> dict:

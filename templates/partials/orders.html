@@ -224,18 +224,40 @@
                     {% endif %}
                 </div>
                 <div class="col-lg-4">
-                    {% set cell = o.product_cell() %}
+                    {# До перезапуска сервера (когда Python-код ещё старый) показываем первую позицию. #}
+                    {% set cells = o.product_cells() if o.product_cells is defined else [o.product_cell()] %}
                     {% set promos = o.promotion_purchase_labels() %}
-                    <div class="product-cell-title" title="{{ cell.name }}">
-                        {% if promos %}
-                        <span class="product-promo-mark product-promo-mark--inline"
-                              title="{{ promos|join(' · ') }}"
-                              aria-label="Куплен по акции">А</span>
-                        {% endif %}
-                        {{ cell.title }}
+                    {% set multi = cells|length > 1 %}
+                    {% if cells %}
+                    <div class="order-products{% if multi %} order-products--multi{% endif %}">
+                        {% for cell in cells %}
+                        <div class="order-products-item">
+                            <div class="product-cell-title" title="{{ cell.name }}">
+                                {% if multi %}
+                                {% if cell.in_promotion %}
+                                <span class="product-promo-mark product-promo-mark--inline"
+                                      title="{{ cell.promotion_titles|join(' · ') }}"
+                                      aria-label="Куплен по акции">А</span>
+                                {% endif %}
+                                <span class="order-product-qty">{{ cell.quantity }} шт.</span>
+                                {{ cell.name }}
+                                {% else %}
+                                {% if promos %}
+                                <span class="product-promo-mark product-promo-mark--inline"
+                                      title="{{ promos|join(' · ') }}"
+                                      aria-label="Куплен по акции">А</span>
+                                {% endif %}
+                                {{ cell.title }}
+                                {% endif %}
+                            </div>
+                            <div class="product-cell-meta font-monospace">{{ cell.offer_id }}</div>
+                            <div class="product-cell-meta font-monospace">{{ cell.barcode }}</div>
+                        </div>
+                        {% endfor %}
                     </div>
-                    <div class="product-cell-meta font-monospace">{{ cell.offer_id }}</div>
-                    <div class="product-cell-meta font-monospace">{{ cell.barcode }}</div>
+                    {% else %}
+                    <div class="product-cell-title text-muted">—</div>
+                    {% endif %}
                 </div>
                 <div class="col-lg-1 text-lg-end">
                     {% if o.has_refund_after_delivery() %}

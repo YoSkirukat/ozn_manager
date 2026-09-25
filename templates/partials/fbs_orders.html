@@ -1,3 +1,31 @@
+{# Один товар отправления в колонке «Товар» (в отправлении их может быть несколько). #}
+{% macro fbs_order_product_item(cell, show_quantity=false, fallback_thumb=none) %}
+<div class="fbs-order-product">
+    {% set thumb = cell.thumbnail_url or fallback_thumb %}
+    {% if thumb %}
+    <img src="{{ thumb }}" alt="" class="ozon-order-thumb fbs-order-product-thumb"
+         loading="lazy" referrerpolicy="no-referrer">
+    {% else %}
+    <div class="ozon-order-thumb ozon-order-thumb-empty fbs-order-product-thumb" aria-hidden="true"></div>
+    {% endif %}
+    <div class="fbs-order-product-info">
+        <div class="product-cell-title" title="{{ cell.name }}">
+            {% if show_quantity %}
+            <span class="order-product-qty">{{ cell.quantity }} шт.</span>
+            {% endif %}
+            {% if cell.in_promotion %}
+            <span class="product-promo-mark product-promo-mark--inline"
+                  title="{{ cell.promotion_titles|join(' · ') }}"
+                  aria-label="Куплен по акции">А</span>
+            {% endif %}
+            {{ cell.name }}
+        </div>
+        <div class="product-cell-meta font-monospace">{{ cell.offer_id }}</div>
+        <div class="product-cell-meta font-monospace">{{ cell.barcode }}</div>
+    </div>
+</div>
+{% endmacro %}
+
 {# Строка отправления FBS (как в списке заказов; склад указан в заголовке группы). #}
 {% macro fbs_order_row(o) %}
 <div class="ozon-order-row">
@@ -46,28 +74,19 @@
             <div class="text-muted small">шт.</div>
         </div>
         <div class="col-lg-2">
-            <div class="fbs-order-product">
-                {% if o.product_image_url() %}
-                <img src="{{ o.product_image_url() }}" alt="" class="ozon-order-thumb fbs-order-product-thumb"
-                     loading="lazy" referrerpolicy="no-referrer">
-                {% else %}
-                <div class="ozon-order-thumb ozon-order-thumb-empty fbs-order-product-thumb" aria-hidden="true"></div>
-                {% endif %}
-                <div class="fbs-order-product-info">
-                    {% set cell = o.product_cell() %}
-                    {% set promos = o.promotion_purchase_labels() %}
-                    <div class="product-cell-title" title="{{ cell.name }}">
-                        {% if promos %}
-                        <span class="product-promo-mark product-promo-mark--inline"
-                              title="{{ promos|join(' · ') }}"
-                              aria-label="Куплен по акции">А</span>
-                        {% endif %}
-                        {{ cell.name }}
-                    </div>
-                    <div class="product-cell-meta font-monospace">{{ cell.offer_id }}</div>
-                    <div class="product-cell-meta font-monospace">{{ cell.barcode }}</div>
-                </div>
+            {# До перезапуска сервера (когда Python-код ещё старый) показываем первую позицию. #}
+            {% set cells = o.product_cells() if o.product_cells is defined else [o.product_cell()] %}
+            {% if cells|length > 1 %}
+            <div class="fbs-order-products fbs-order-products--multi">
+                {% for cell in cells %}
+                {{ fbs_order_product_item(cell, true) }}
+                {% endfor %}
             </div>
+            {% elif cells %}
+            {{ fbs_order_product_item(cells[0], false, o.product_image_url()) }}
+            {% else %}
+            <div class="text-muted">—</div>
+            {% endif %}
         </div>
         <div class="col-lg-2">
             <div class="fbs-order-provider">{{ o.delivery_provider() }}</div>

@@ -182,8 +182,43 @@ def _product_rows(
     return rows
 
 
+# Ячейка товара, если в отправлении не удалось определить ни одной позиции.
+EMPTY_PRODUCT_CELL = {
+    "title": "—",
+    "name": "—",
+    "quantity": 0,
+    "offer_id": "—",
+    "barcode": "—",
+    "thumbnail_url": None,
+    "in_promotion": False,
+    "promotion_titles": [],
+}
+
+
+def build_product_cell(row: dict) -> dict:
+    """Ячейка одного товара для колонки «Товар» в списках заказов."""
+    qty = int(row.get("quantity") or 1)
+    name = str(row.get("name") or "—")
+    return {
+        "title": f"{qty} шт. {name}",
+        "name": name,
+        "quantity": qty,
+        "offer_id": str(row.get("offer_id") or "—"),
+        "barcode": str(row.get("barcode") or "—"),
+        "thumbnail_url": row.get("thumbnail_url") or None,
+        "in_promotion": bool(row.get("in_promotion")),
+        "promotion_titles": [
+            str(title) for title in (row.get("promotion_titles") or []) if title
+        ],
+    }
+
+
 def attach_order_product_cells(orders: list, user_id: int) -> None:
-    """Данные для колонки товара в списке заказов (как на странице «Товары»)."""
+    """Данные для колонки товара в списке заказов (как на странице «Товары»).
+
+    В одном отправлении может быть несколько разных товаров — сохраняем все
+    позиции (`order._product_cells`), чтобы список показывал каждую из них.
+    """
     if not orders:
         return
 
@@ -196,15 +231,9 @@ def attach_order_product_cells(orders: list, user_id: int) -> None:
             order.thumbnail_url,
             product_lookup=product_lookup,
         )
-        product = rows[0] if rows else {}
-        qty = int(product.get("quantity") or 1)
-        name = str(product.get("name") or "—")
-        order._product_cell = {
-            "title": f"{qty} шт. {name}",
-            "name": name,
-            "offer_id": str(product.get("offer_id") or "—"),
-            "barcode": str(product.get("barcode") or "—"),
-        }
+        cells = [build_product_cell(row) for row in rows]
+        order._product_cells = cells
+        order._product_cell = cells[0] if cells else dict(EMPTY_PRODUCT_CELL)
 
 
 def _apply_product_margins(
