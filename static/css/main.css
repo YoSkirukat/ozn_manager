@@ -1072,15 +1072,6 @@ body {
     display: none;
 }
 
-    width: 2rem;
-    height: 2rem;
-    padding: 0;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    line-height: 1;
-}
-
 .table>thead {
     vertical-align: bottom;
     position: sticky;
@@ -1350,9 +1341,19 @@ body {
 
 .products-table th.supply-planning-col-header {
     white-space: normal;
-    min-width: 6.5rem;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    min-width: 4.5rem;
     text-align: center;
     vertical-align: middle;
+}
+
+/* Колонка товара в планировании поставки: уже, чем на странице товаров,
+   чтобы таблица помещалась в контейнер без горизонтальной прокрутки */
+.supply-planning-table .products-col-product {
+    min-width: 10rem;
+    word-break: break-word;
+    overflow-wrap: anywhere;
 }
 
 .supply-planning-export-btn {
