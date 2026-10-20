@@ -5,12 +5,22 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import date, timedelta
 from decimal import Decimal
+from threading import Lock
+from time import monotonic
 
 from app.datetime_fmt import local_today
 from app.ozon.buyout import fetch_buyout_products_range
 from app.ozon.finance import related_posting_numbers
 
 BUYOUT_RAW_CACHE_KEYS = ("_buyout_amount", "_buyout_products")
+
+# Отчёт о выкупах — тяжёлый: Ozon отдаёт его заметно реже остальных финансовых
+# методов (штрафной Retry-After на десятки секунд), а сами выкупы задним числом
+# не меняются. Кэшируем индекс по периоду, чтобы повторные обновления не ждали.
+BUYOUT_INDEX_TTL_SECONDS = 10 * 60
+
+_buyout_index_lock = Lock()
+_buyout_index_cache: dict[tuple, tuple[float, dict[str, list[dict]]]] = {}
 
 
 def _decimal(value) -> Decimal:
@@ -93,6 +103,13 @@ def build_buyout_index_for_orders(user, orders: list) -> dict[str, list[dict]]:
     # Небольшой запас: выкуп может попасть в отчёт чуть позже даты заказа.
     date_to = min(date_to + timedelta(days=14), today)
 
+    cache_key = (getattr(user, "id", None), date_from.isoformat(), date_to.isoformat())
+    now = monotonic()
+    with _buyout_index_lock:
+        cached = _buyout_index_cache.get(cache_key)
+        if cached and now - cached[0] < BUYOUT_INDEX_TTL_SECONDS:
+            return cached[1]
+
     try:
         products = fetch_buyout_products_range(
             user.ozon_client_id,
@@ -103,7 +120,13 @@ def build_buyout_index_for_orders(user, orders: list) -> dict[str, list[dict]]:
     except Exception:
         return {}
 
-    return build_buyout_index(products)
+    index = build_buyout_index(products)
+    with _buyout_index_lock:
+        for stale_key, (stored_at, _) in list(_buyout_index_cache.items()):
+            if now - stored_at >= BUYOUT_INDEX_TTL_SECONDS:
+                _buyout_index_cache.pop(stale_key, None)
+        _buyout_index_cache[cache_key] = (monotonic(), index)
+    return index
 
 
 def resolve_order_buyout_rows(order, buyout_index: dict[str, list[dict]] | None) -> list[dict]:

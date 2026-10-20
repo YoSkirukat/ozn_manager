@@ -5,7 +5,14 @@ from decimal import Decimal
 
 from app.ozon.client import _post, _post_content
 
-POSTING_LIST_LIMIT = 1000
+# Ozon отключил прежние методы списка: /v3/posting/fbs/list отвечает 429
+# («request rate limit per second»), а /v2/posting/fbo/list — 400
+# «obsolete method cannot be used». Рабочие методы возвращают не более 100
+# отправлений на страницу и пагинируются курсором.
+POSTING_LIST_LIMIT = 100
+MAX_LIST_PAGES = 100
+FBS_LIST_PATH = "/v4/posting/fbs/list"
+FBO_LIST_PATH = "/v3/posting/fbo/list"
 LIST_WITH = {"analytics_data": True, "financial_data": True}
 
 
@@ -81,20 +88,26 @@ def normalize_posting(posting: dict, scheme: str) -> dict | None:
     }
 
 
-def _parse_list_response(data: dict) -> tuple[list[dict], bool]:
-    """Ozon может вернуть result как объект или список отправлений."""
+def _parse_list_response(data: dict) -> tuple[list[dict], bool, str]:
+    """Разбирает ответ методов списка отправлений.
+
+    Актуальные методы (`/v4/posting/fbs/list`, `/v3/posting/fbo/list`) отдают
+    `postings`, `has_next` и `cursor` в корне ответа. Старый формат с вложенным
+    `result` поддерживаем для совместимости.
+    """
+    if not isinstance(data, dict):
+        return [], False, ""
+
     result = data.get("result")
     if isinstance(result, list):
-        batch = [p for p in result if isinstance(p, dict)]
-        return batch, False
-    if isinstance(result, dict):
-        postings = result.get("postings") or []
-        if isinstance(postings, list):
-            batch = [p for p in postings if isinstance(p, dict)]
-        else:
-            batch = []
-        return batch, bool(result.get("has_next"))
-    return [], False
+        return [p for p in result if isinstance(p, dict)], False, ""
+
+    source = result if isinstance(result, dict) else data
+
+    postings = source.get("postings") or []
+    batch = [p for p in postings if isinstance(p, dict)] if isinstance(postings, list) else []
+    cursor = str(source.get("cursor") or "").strip()
+    return batch, bool(source.get("has_next")), cursor
 
 
 def _fetch_posting_pages(
@@ -104,36 +117,35 @@ def _fetch_posting_pages(
     since: str,
     to: str,
 ) -> list[dict]:
+    """Постранично загружает отправления за период (курсорная пагинация Ozon)."""
     items: list[dict] = []
-    offset = 0
-    while True:
+    cursor = ""
+    for _ in range(MAX_LIST_PAGES):
         payload = {
             "dir": "ASC",
             "filter": {"since": since, "to": to},
             "limit": POSTING_LIST_LIMIT,
-            "offset": offset,
+            "cursor": cursor,
             "with": LIST_WITH,
         }
         data = _post(client_id, api_key, path, payload)
-        if not isinstance(data, dict):
-            break
-        batch, has_next = _parse_list_response(data)
+        batch, has_next, next_cursor = _parse_list_response(data)
         items.extend(batch)
-        if not has_next or not batch:
+        if not has_next or not batch or not next_cursor or next_cursor == cursor:
             break
-        offset += len(batch)
+        cursor = next_cursor
     return items
 
 
 def fetch_fbs_postings(client_id: str, api_key: str, date_from: date, date_to: date) -> list[dict]:
     since, to = _iso_range(date_from, date_to)
-    postings = _fetch_posting_pages(client_id, api_key, "/v3/posting/fbs/list", since, to)
+    postings = _fetch_posting_pages(client_id, api_key, FBS_LIST_PATH, since, to)
     return [p for p in (normalize_posting(item, "FBS") for item in postings) if p]
 
 
 def fetch_fbo_postings(client_id: str, api_key: str, date_from: date, date_to: date) -> list[dict]:
     since, to = _iso_range(date_from, date_to)
-    postings = _fetch_posting_pages(client_id, api_key, "/v2/posting/fbo/list", since, to)
+    postings = _fetch_posting_pages(client_id, api_key, FBO_LIST_PATH, since, to)
     return [p for p in (normalize_posting(item, "FBO") for item in postings) if p]
 
 

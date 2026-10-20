@@ -16,11 +16,13 @@ from app.services.order_details import (
     resolve_total_accrued,
 )
 from app.services.order_buyout import build_buyout_index_for_orders, clear_buyout_cache
-from app.services.order_images import resolve_thumbnail_url
+from app.services.order_images import build_thumbnail_lookup, resolve_thumbnail_url
 from app.services.order_promotions import apply_product_promotions, fetch_known_promotion_titles
 
 SYNC_COMMIT_BATCH = 20
 FINANCIAL_COMMIT_BATCH = 5
+# SQLite ограничивает число параметров в одном запросе, поэтому IN-список режем на пачки.
+ORDER_LOOKUP_CHUNK = 500
 
 
 def _refresh_orders_financials_batch(user, orders: list[Order]) -> dict:
@@ -38,36 +40,44 @@ def _refresh_orders_financials_batch(user, orders: list[Order]) -> dict:
     buyout_index = build_buyout_index_for_orders(user, orders)
     accruals_lookup = load_batch_accruals(user, orders)
 
-    with db.session.no_autoflush:
-        for index, order in enumerate(orders, start=1):
-            if order.status != ORDER_STATUS_DELIVERED:
-                continue
-            before_raw = dict(order.raw_data) if isinstance(order.raw_data, dict) else {}
-            clear_financial_cache(order)
-            if order.is_international():
-                clear_buyout_cache(order)
-            raw = order.raw_data if isinstance(order.raw_data, dict) else before_raw
-            if not order.is_international():
-                resolve_total_accrued(
+    # Коммиты внутри цикла иначе «протухают» все загруженные заказы, и каждое
+    # обращение к полю заново читает строку из SQLite: на 640 заказах это секунды
+    # лишних SELECT-ов. rollback при блокировке по-прежнему сбрасывает состояние.
+    previous_expire = db.session().expire_on_commit
+    db.session().expire_on_commit = False
+    try:
+        with db.session.no_autoflush:
+            for index, order in enumerate(orders, start=1):
+                if order.status != ORDER_STATUS_DELIVERED:
+                    continue
+                before_raw = dict(order.raw_data) if isinstance(order.raw_data, dict) else {}
+                clear_financial_cache(order)
+                if order.is_international():
+                    clear_buyout_cache(order)
+                raw = order.raw_data if isinstance(order.raw_data, dict) else before_raw
+                if not order.is_international():
+                    resolve_total_accrued(
+                        order,
+                        raw,
+                        user=user,
+                        use_transactions=True,
+                        accruals_lookup=accruals_lookup,
+                    )
+                compute_order_margin(
                     order,
-                    raw,
                     user=user,
                     use_transactions=True,
+                    product_lookup=product_lookup,
+                    buyout_index=buyout_index,
                     accruals_lookup=accruals_lookup,
                 )
-            compute_order_margin(
-                order,
-                user=user,
-                use_transactions=True,
-                product_lookup=product_lookup,
-                buyout_index=buyout_index,
-                accruals_lookup=accruals_lookup,
-            )
-            after_raw = order.raw_data if isinstance(order.raw_data, dict) else {}
-            if after_raw != before_raw:
-                updated += 1
-            if index % FINANCIAL_COMMIT_BATCH == 0:
-                db_session_commit()
+                after_raw = order.raw_data if isinstance(order.raw_data, dict) else {}
+                if after_raw != before_raw:
+                    updated += 1
+                if index % FINANCIAL_COMMIT_BATCH == 0:
+                    db_session_commit()
+    finally:
+        db.session().expire_on_commit = previous_expire
 
     db_session_commit()
     return {"processed": len(orders), "updated": updated}
@@ -99,6 +109,21 @@ def _recompute_local_margins(user, orders: list[Order]) -> int:
             recomputed += 1
 
     return recomputed
+
+
+def _load_orders_lookup(user_id: int, posting_numbers: list[str]) -> dict[str, Order]:
+    """Заказы пользователя по номерам отправлений — пачками вместо N+1 запросов."""
+    lookup: dict[str, Order] = {}
+    unique = list(dict.fromkeys(number for number in posting_numbers if number))
+    for start in range(0, len(unique), ORDER_LOOKUP_CHUNK):
+        chunk = unique[start : start + ORDER_LOOKUP_CHUNK]
+        rows = Order.query.filter(
+            Order.user_id == user_id,
+            Order.ozon_order_id.in_(chunk),
+        ).all()
+        for row in rows:
+            lookup[row.ozon_order_id] = row
+    return lookup
 
 
 def load_orders_from_ozon(
@@ -139,70 +164,80 @@ def load_orders_from_ozon(
 
     touched_orders: list[Order] = []
     new_ozon_ids: list[str] = []
-    with db.session.no_autoflush:
-        for index, item in enumerate(all_items, start=1):
-            order = Order.query.filter_by(
-                user_id=user.id,
-                ozon_order_id=item["ozon_order_id"],
-            ).first()
+    thumbnail_lookup = build_thumbnail_lookup(user.id)
+    orders_lookup = _load_orders_lookup(
+        user.id,
+        [item["ozon_order_id"] for item in all_items],
+    )
+    # Коммиты пачками иначе «протухают» загруженные заказы: каждое обращение к полю
+    # после commit заново читает строку из SQLite (N+1 на сотнях заказов).
+    previous_expire = db.session().expire_on_commit
+    db.session().expire_on_commit = False
+    try:
+        with db.session.no_autoflush:
+            for index, item in enumerate(all_items, start=1):
+                order = orders_lookup.get(item["ozon_order_id"])
 
-            thumb = resolve_thumbnail_url(user.id, item.get("raw_data"))
-            merged_raw = merge_order_raw_data(
-                order.raw_data if order and isinstance(order.raw_data, dict) else None,
-                item.get("raw_data"),
-                old_status=order.status if order else "",
-                new_status=item["status"],
-            )
-
-            if order:
-                order.status = item["status"]
-                order.scheme = item["scheme"]
-                order.total = item["total"]
-                order.order_date = item["order_date"]
-                order.raw_data = merged_raw
-                if thumb:
-                    order.thumbnail_url = thumb
-                updated += 1
-                touched_orders.append(order)
-            else:
-                order = Order(
-                    user_id=user.id,
-                    ozon_order_id=item["ozon_order_id"],
-                    status=item["status"],
-                    scheme=item["scheme"],
-                    total=item["total"],
-                    order_date=item["order_date"],
-                    thumbnail_url=thumb,
-                    raw_data=merged_raw,
-                    created_at=now,
+                thumb = resolve_thumbnail_url(user.id, item.get("raw_data"), thumbnail_lookup)
+                merged_raw = merge_order_raw_data(
+                    order.raw_data if order and isinstance(order.raw_data, dict) else None,
+                    item.get("raw_data"),
+                    old_status=order.status if order else "",
+                    new_status=item["status"],
                 )
-                db.session.add(order)
-                created += 1
-                new_ozon_ids.append(item["ozon_order_id"])
-                touched_orders.append(order)
 
-            apply_product_promotions(
-                order,
-                user_id=user.id,
-                known_titles=known_promotion_titles,
-                force_refresh=True,
-            )
+                if order:
+                    order.status = item["status"]
+                    order.scheme = item["scheme"]
+                    order.total = item["total"]
+                    order.order_date = item["order_date"]
+                    order.raw_data = merged_raw
+                    if thumb:
+                        order.thumbnail_url = thumb
+                    updated += 1
+                    touched_orders.append(order)
+                else:
+                    order = Order(
+                        user_id=user.id,
+                        ozon_order_id=item["ozon_order_id"],
+                        status=item["status"],
+                        scheme=item["scheme"],
+                        total=item["total"],
+                        order_date=item["order_date"],
+                        thumbnail_url=thumb,
+                        raw_data=merged_raw,
+                        created_at=now,
+                    )
+                    db.session.add(order)
+                    orders_lookup[order.ozon_order_id] = order
+                    created += 1
+                    new_ozon_ids.append(item["ozon_order_id"])
+                    touched_orders.append(order)
 
-            if index % SYNC_COMMIT_BATCH == 0:
-                db_session_commit()
+                apply_product_promotions(
+                    order,
+                    user_id=user.id,
+                    known_titles=known_promotion_titles,
+                    force_refresh=True,
+                )
 
-    # Коммитим остаток пачки до обращения к финансовому API Ozon: иначе открытая
-    # транзакция держит блокировку записи SQLite всё время сетевых запросов, и любые
-    # другие записи (создание пользователя, сохранение профиля) падают с
-    # «database is locked».
-    db_session_commit()
+                if index % SYNC_COMMIT_BATCH == 0:
+                    db_session_commit()
 
-    financials = {"processed": 0, "updated": 0}
-    margins_recomputed = 0
-    if refresh_financials_batch and touched_orders:
-        financials = _refresh_orders_financials_batch(user, touched_orders)
-    elif touched_orders:
-        margins_recomputed = _recompute_local_margins(user, touched_orders)
+        # Коммитим остаток пачки до обращения к финансовому API Ozon: иначе открытая
+        # транзакция держит блокировку записи SQLite всё время сетевых запросов, и любые
+        # другие записи (создание пользователя, сохранение профиля) падают с
+        # «database is locked».
+        db_session_commit()
+
+        financials = {"processed": 0, "updated": 0}
+        margins_recomputed = 0
+        if refresh_financials_batch and touched_orders:
+            financials = _refresh_orders_financials_batch(user, touched_orders)
+        elif touched_orders:
+            margins_recomputed = _recompute_local_margins(user, touched_orders)
+    finally:
+        db.session().expire_on_commit = previous_expire
 
     log_change(
         user_id=user.id,

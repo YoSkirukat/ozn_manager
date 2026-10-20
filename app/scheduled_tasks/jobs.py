@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 from datetime import date, timedelta
+from time import monotonic
 
 from app.db_sqlite import db_session_commit
 from app.extensions import db
@@ -22,6 +23,12 @@ logger = logging.getLogger(__name__)
 
 ORDERS_SYNC_DAYS = 30
 SHIPMENTS_SYNC_DAYS = 21
+# Финансовые методы Ozon ограничены «1 запросом в секунду» с штрафными 429, а полный
+# пересчёт по 30 дням — это несколько таких запросов. Каждые 5 минут он не нужен:
+# начисления приходят с задержкой в часы, а частые пачки заставляют кнопку
+# «Обновить» в интерфейсе ждать, пока Ozon отпустит лимит.
+ORDERS_SYNC_FINANCE_INTERVAL_SEC = 20 * 60
+_last_finance_refresh: dict[int, float] = {}
 
 
 def _orders_sync_period() -> tuple[date, date]:
@@ -125,17 +132,28 @@ def _run_orders_sync(user: User) -> dict:
         }
 
     date_from, date_to = _orders_sync_period()
+    refresh_finance = (
+        monotonic() - _last_finance_refresh.get(user.id, 0.0)
+        >= ORDERS_SYNC_FINANCE_INTERVAL_SEC
+    )
     result = load_orders_from_ozon(
         user,
         date_from,
         date_to,
-        refresh_financials_batch=True,
+        refresh_financials_batch=refresh_finance,
     )
     if result.get("ok"):
+        if refresh_finance:
+            _last_finance_refresh[user.id] = monotonic()
+            finance_note = f"финансы пересчитаны {result.get('financials_updated', 0)}"
+        else:
+            finance_note = (
+                f"маржа пересчитана локально {result.get('margins_recomputed', 0)}"
+            )
         result["message"] = (
             f"Заказы за {date_from.strftime('%d.%m.%Y')}–{date_to.strftime('%d.%m.%Y')}: "
             f"создано {result.get('created', 0)}, обновлено {result.get('updated', 0)}; "
-            f"финансы пересчитаны {result.get('financials_updated', 0)}."
+            f"{finance_note}."
         )
         result["date_from"] = date_from.isoformat()
         result["date_to"] = date_to.isoformat()

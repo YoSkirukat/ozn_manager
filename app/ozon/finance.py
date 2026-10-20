@@ -10,7 +10,7 @@ from decimal import Decimal
 from threading import Lock
 from time import monotonic
 
-from app.ozon.client import _post
+from app.ozon.client import OzonRateLimitError, _post
 
 logger = logging.getLogger(__name__)
 
@@ -154,6 +154,16 @@ def _fetch_accrual_postings_chunk(
             ACCRUAL_POSTINGS_PATH,
             {"posting_numbers": posting_numbers},
         )
+    except OzonRateLimitError:
+        # Лимит запросов, а не ошибка номеров: дробить батч на 200 запросов
+        # бессмысленно — каждый снова получит 429, и синхронизация (кнопка
+        # «Обновить») растянется на минуты. Возвращаем пусто: ниже сработает
+        # fallback на financial_data из списка заказов, без сетевых вызовов.
+        logger.warning(
+            "Ozon ограничил запрос начислений: пропускаем батч из %s отправлений",
+            len(posting_numbers),
+        )
+        return {}
     except Exception:
         if len(posting_numbers) > 1:
             # Один отклонённый номер не должен обнулять начисления всего батча.

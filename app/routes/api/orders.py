@@ -5,6 +5,7 @@ from flask_login import current_user, login_required
 from werkzeug.utils import secure_filename
 
 from app.models import Order
+from app.ozon.client import priority_requests
 from app.services.order_actions import (
     assemble_fbs_order,
     load_fbs_label,
@@ -47,12 +48,13 @@ def load_orders():
     if not date_from or not date_to:
         return jsonify({"ok": False, "error": "Укажите период: дату начала и окончания."}), 400
 
-    result = load_orders_from_ozon(
-        current_user,
-        date_from,
-        date_to,
-        refresh_financials_batch=refresh_financials_batch,
-    )
+    with priority_requests():
+        result = load_orders_from_ozon(
+            current_user,
+            date_from,
+            date_to,
+            refresh_financials_batch=refresh_financials_batch,
+        )
     if result.get("ok"):
         save_orders_period(date_from, date_to)
     status = 200 if result.get("ok") else 400
