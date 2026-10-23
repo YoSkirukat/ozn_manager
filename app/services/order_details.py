@@ -7,6 +7,7 @@ from app.db_sqlite import db_session_commit
 from app.extensions import db
 from app.models import LABEL_DOWNLOADED_RAW_KEY, ORDER_STATUS_DELIVERED, ORDER_STATUS_LABELS, Product
 from app.ozon.client import _post
+from app.ozon.money import money_amount, money_currency
 from app.ozon.finance import (
     PostingAccruals,
     _parse_operation_date,
@@ -136,15 +137,18 @@ def _product_rows(
         fin = financial_items[idx] if idx < len(financial_items) else {}
         catalog = _catalog_product(user_id, item, fin, product_lookup=product_lookup)
         qty = _decimal(fin.get("quantity") or item.get("quantity") or 1)
-        price = item.get("price") or fin.get("price") or 0
-        customer_price = _decimal(fin.get("customer_price") or 0)
+        # В отправлении `price` — объект {"amount", "currency"} (FBO/FBS), в финансовых данных — число.
+        price = money_amount(item.get("price")) or money_amount(fin.get("price"))
+        customer_price = money_amount(fin.get("customer_price"))
         customer_currency_code = str(
             fin.get("customer_currency_code") or item.get("customer_currency_code") or ""
         ).upper()
-        currency_code = str(item.get("currency_code") or fin.get("currency_code") or "RUB").upper()
+        currency_code = str(item.get("currency_code") or fin.get("currency_code") or "").upper()
+        if not currency_code:
+            currency_code = money_currency(item.get("price")) or money_currency(fin.get("price")) or "RUB"
         if not customer_currency_code:
-            customer_currency_code = currency_code
-        unit_price_rub = _decimal(fin.get("price") or item.get("price") or 0)
+            customer_currency_code = money_currency(fin.get("customer_price")) or currency_code
+        unit_price_rub = money_amount(fin.get("price")) or price
         customer_price_rub = _money(unit_price_rub * qty) if unit_price_rub > 0 else None
         thumb = fallback_thumb
         if catalog and catalog.thumbnail_url:
@@ -672,7 +676,7 @@ def _seller_price_revenue(accruals: list[dict]) -> Decimal | None:
 def _financial_revenue(raw: dict) -> Decimal:
     total = Decimal(0)
     for fin in _financial_products(raw):
-        total += _decimal(fin.get("price") or 0) * _decimal(fin.get("quantity") or 1)
+        total += money_amount(fin.get("price")) * _decimal(fin.get("quantity") or 1)
     return total
 
 
@@ -747,7 +751,7 @@ def _accrual_rows_fallback(raw: dict, order_total: Decimal) -> tuple[list[dict],
 
     for fin in financial_items:
         qty = _decimal(fin.get("quantity") or 1)
-        price = _decimal(fin.get("price") or 0)
+        price = money_amount(fin.get("price"))
         commission = _decimal(fin.get("commission_amount") or 0)
         payout = _decimal(fin.get("payout") or 0)
 

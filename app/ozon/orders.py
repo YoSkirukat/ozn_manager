@@ -4,6 +4,7 @@ from datetime import date, datetime, time, timezone
 from decimal import Decimal
 
 from app.ozon.client import _post, _post_content
+from app.ozon.money import money_amount
 
 # Ozon отключил прежние методы списка: /v3/posting/fbs/list отвечает 429
 # («request rate limit per second»), а /v2/posting/fbo/list — 400
@@ -49,7 +50,8 @@ def _extract_total(posting: dict) -> Decimal:
     for item in products:
         if not isinstance(item, dict):
             continue
-        price = Decimal(str(item.get("price") or item.get("customer_price") or 0))
+        # `price` в списке отправлений — объект {"amount", "currency"}, в финансовых данных — число.
+        price = money_amount(item.get("price")) or money_amount(item.get("customer_price"))
         qty = int(item.get("quantity") or 1)
         total += price * qty
     if total > 0:
@@ -58,10 +60,7 @@ def _extract_total(posting: dict) -> Decimal:
     for key in ("total_price", "price", "amount"):
         raw = posting.get(key)
         if raw is not None:
-            try:
-                return Decimal(str(raw)).quantize(Decimal("0.01"))
-            except Exception:
-                pass
+            return money_amount(raw).quantize(Decimal("0.01"))
     return Decimal(0)
 
 
