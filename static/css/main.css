@@ -2041,6 +2041,20 @@ body {
     margin-top: 0.2rem;
 }
 
+/* Номер с этикетки Ozon (scanit) — вторая строка под номером отправления */
+.fbs-order-label-number {
+    margin-top: 0.25rem;
+    font-size: 0.78rem;
+    color: #374151;
+    line-height: 1.25;
+}
+
+.fbs-order-label-number-caption {
+    display: block;
+    font-size: 0.68rem;
+    color: #9ca3af;
+}
+
 .ozon-order-country {
     color: #6b7280;
     font-weight: 600;

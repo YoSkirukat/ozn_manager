@@ -55,6 +55,16 @@
                 <span class="ozon-order-country">{{ o.delivery_country() }}</span>
                 {% endif %}
             </div>
+            {# Номер с этикетки (scanit): Ozon присылает его только после печати стикера. #}
+            {% if o.label_number is defined %}
+            {% set label_number = o.label_number() %}
+            {% if label_number %}
+            <div class="fbs-order-label-number" title="Номер с этикетки">
+                <span class="fbs-order-label-number-caption">Номер с этикетки</span>
+                <span class="font-monospace">{{ label_number }}</span>
+            </div>
+            {% endif %}
+            {% endif %}
         </div>
         <div class="col-lg-1">
             {% set tracking = o.tracking_number() %}

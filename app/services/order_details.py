@@ -925,6 +925,7 @@ def build_order_detail(
         "ok": True,
         "header": {
             "posting_number": order.ozon_order_id,
+            "label_number": order.label_number(),
             "order_date": order_date,
             "scheme": order.scheme_display(),
             "scheme_class": order.scheme.lower(),

@@ -400,6 +400,19 @@ class Order(db.Model):
         raw = self.raw_data if isinstance(self.raw_data, dict) else {}
         return str(raw.get("tracking_number") or "").strip()
 
+    def label_number(self) -> str:
+        """Номер с этикетки Ozon (в API — поле `scanit`).
+
+        Ozon присылает его с префиксом типа штрихкода: «ii50145066408», а в личном
+        кабинете номер показан без этого префикса — «i50145066408». Пока этикетка
+        не напечатана, поле пустое.
+        """
+        raw = self.raw_data if isinstance(self.raw_data, dict) else {}
+        scanit = str(raw.get("scanit") or "").strip()
+        if scanit.startswith("ii"):
+            return scanit[1:]
+        return scanit
+
     def can_download_label(self) -> bool:
         """Доступна ли этикетка отправления: после сборки либо по данным Ozon."""
         if (self.scheme or "").upper() != self.SCHEME_FBS:

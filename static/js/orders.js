@@ -401,7 +401,11 @@ function renderOrderModal(data) {
             `<span class="ozon-scheme ozon-scheme-${schemeClass}">${escapeHtml(scheme)}</span>` +
             (header.status ? ` &middot; ${escapeHtml(header.status)}${returnMark}` : "") +
             (header.delivery_country ? ` &middot; ${escapeHtml(header.delivery_country)}` : "") +
-            (header.is_international ? ' &middot; <span class="text-warning-emphasis">Международный заказ</span>' : "");
+            (header.is_international ? ' &middot; <span class="text-warning-emphasis">Международный заказ</span>' : "") +
+            (header.label_number
+                ? ` &middot; <span class="order-modal-label-number" title="Номер с этикетки">` +
+                    `Номер с этикетки: <span class="font-monospace">${escapeHtml(header.label_number)}</span></span>`
+                : "");
     }
 
     const hideMargin = Boolean(header.has_post_delivery_return);
