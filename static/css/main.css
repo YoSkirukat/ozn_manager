@@ -2044,14 +2044,22 @@ body {
 /* Номер с этикетки Ozon (scanit) — вторая строка под номером отправления */
 .fbs-order-label-number {
     margin-top: 0.25rem;
-    font-size: 0.78rem;
+    /* Размер и насыщенность как у номера отправления — это второй номер заказа. */
+    font-size: 0.95rem;
+    font-weight: 600;
     color: #374151;
     line-height: 1.25;
+    word-break: break-all;
+}
+
+.fbs-order-label-number-value {
+    font-weight: 600;
 }
 
 .fbs-order-label-number-caption {
     display: block;
     font-size: 0.68rem;
+    font-weight: 400;
     color: #9ca3af;
 }
 
@@ -2186,6 +2194,11 @@ body {
 
 @media (max-width: 991.98px) {
     .ozon-order-row .ozon-posting-link {
+        font-size: 0.9rem;
+    }
+
+    /* Номер с этикетки масштабируется вместе с номером отправления. */
+    .ozon-order-row .fbs-order-label-number {
         font-size: 0.9rem;
     }
 
