@@ -1,10 +1,12 @@
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, Response, jsonify, request
 from flask_login import current_user, login_required
+from werkzeug.utils import secure_filename
 
 from app.extensions import db
 from app.models import Product
 from app.services.fbs_stocks import product_fbs_stock_breakdown
 from app.services.product_commissions import commission_detail_for_api
+from app.services.product_label import build_product_label
 from app.services.product_sync import sync_products_from_ozon
 from app.services.purchase_prices import _parse_price, apply_purchase_prices_from_content
 
@@ -77,6 +79,29 @@ def update_purchase_price(product_id: int):
         "can_show_profit_markup": product.can_show_profit_markup(),
         "profit_rows": profit_rows,
     })
+
+
+@products_api_bp.route("/products/<int:product_id>/label", methods=["GET"])
+@login_required
+def product_package_label(product_id: int):
+    """Этикетка товара со штрихкодом: PDF для печати на стикере."""
+    product = Product.query.filter_by(id=product_id, user_id=current_user.id).first()
+    if not product:
+        return jsonify({"ok": False, "error": "Товар не найден."}), 404
+
+    result = build_product_label(product)
+    if not result.get("ok"):
+        return jsonify({"ok": False, "error": result.get("error")}), 400
+
+    safe_name = secure_filename(result["filename"]) or f"label-{product.id}.pdf"
+    return Response(
+        result["content"],
+        mimetype="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{safe_name}"',
+            "Cache-Control": "no-store",
+        },
+    )
 
 
 @products_api_bp.route("/products/<int:product_id>/fbs-stocks", methods=["GET"])

@@ -287,6 +287,65 @@ function bindProductFbsStockButtons(root) {
     });
 }
 
+function productLabelFilename(res, productId) {
+    const disposition = res.headers.get("content-disposition") || "";
+    const match = disposition.match(/filename="?([^";]+)"?/i);
+    return match ? match[1] : `label-${productId}.pdf`;
+}
+
+async function downloadProductLabel(btn) {
+    const productId = btn.dataset.productId;
+    if (!productId || btn.dataset.loading === "1") return;
+
+    const originalHtml = btn.innerHTML;
+    btn.dataset.loading = "1";
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status"></span>';
+
+    try {
+        const url = `/api/products/${encodeURIComponent(productId)}/label`;
+        const res = await fetch(url, { headers: { "X-Requested-With": "XMLHttpRequest" } });
+        const contentType = res.headers.get("content-type") || "";
+
+        if (contentType.includes("application/json")) {
+            const data = await res.json();
+            throw new Error(data.error || "Не удалось получить этикетку товара.");
+        }
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+        const blob = await res.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = blobUrl;
+        link.download = productLabelFilename(res, productId);
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(blobUrl);
+
+        if (typeof showToast === "function") {
+            showToast("Этикетка товара загружена.", "success");
+        }
+    } catch (err) {
+        if (typeof showToast === "function") showToast(`Ошибка: ${err.message}`, "danger");
+    } finally {
+        btn.dataset.loading = "0";
+        btn.innerHTML = originalHtml;
+        if (btn.dataset.hasBarcode !== "0") btn.disabled = false;
+    }
+}
+
+function bindProductLabelButtons(root) {
+    const scope = root || document;
+    scope.querySelectorAll(".product-label-btn").forEach((btn) => {
+        if (btn.dataset.bound === "1") return;
+        btn.dataset.bound = "1";
+        btn.addEventListener("click", () => {
+            downloadProductLabel(btn);
+        });
+    });
+}
+
 function renderProfitMarkupCell(cell, profitRows) {
     if (!cell) return;
     if (!profitRows || !profitRows.length) {
@@ -427,6 +486,7 @@ function initProductsPage() {
 
     bindProductCommissionButtons(document);
     bindProductFbsStockButtons(document);
+    bindProductLabelButtons(document);
     bindProductPurchasePriceInputs(document);
 
     const commissionModalEl = document.getElementById("product-commission-modal");
