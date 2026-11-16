@@ -78,6 +78,19 @@ def create_app(config_class=Config):
 
     init_scheduler(app)
 
+    from sqlalchemy import inspect
+
+    with app.app_context():
+        try:
+            tables = set(inspect(db.engine).get_table_names())
+        except Exception:  # noqa: BLE001 — диагностика не должна ломать старт
+            tables = set()
+    if not app.config.get("TESTING") and "users" not in tables:
+        app.logger.error(
+            "Схема базы данных не создана (нет таблицы users). "
+            "Примените миграции: FLASK_APP=wsgi:app flask db upgrade"
+        )
+
     @app.route("/favicon.ico")
     def favicon():
         from flask import send_from_directory

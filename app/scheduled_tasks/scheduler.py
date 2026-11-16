@@ -134,6 +134,10 @@ def _mark_runs_interrupted(runs: list[ScheduledTaskRun], *, message: str) -> int
 
 
 def _cleanup_stale_running_runs() -> None:
+    if not _scheduler_tables_ready():
+        logger.info("Scheduled task tables not ready; skip stale runs cleanup.")
+        return
+
     stale = ScheduledTaskRun.query.filter_by(status=ScheduledTaskRun.STATUS_RUNNING).all()
     if not stale:
         return
@@ -154,6 +158,9 @@ def _cleanup_stale_running_runs() -> None:
 
 
 def _mark_own_running_runs_interrupted() -> None:
+    if not _scheduler_tables_ready():
+        return
+
     pid = os.getpid()
     running = ScheduledTaskRun.query.filter_by(status=ScheduledTaskRun.STATUS_RUNNING).all()
     own = [run for run in running if _run_owner_pid(run) == pid]
@@ -257,10 +264,12 @@ def get_scheduler_runtime_status(app, user_id: int) -> dict:
 
 
 def _scheduler_tables_ready() -> bool:
+    """Схема регламентных заданий создана (накатаны миграции)."""
     try:
-        return "scheduled_task_settings" in inspect(db.engine).get_table_names()
+        tables = set(inspect(db.engine).get_table_names())
     except Exception:
         return False
+    return {"scheduled_task_settings", "scheduled_task_runs"} <= tables
 
 
 def reload_all_jobs(app) -> None:
@@ -468,14 +477,44 @@ def init_scheduler(app) -> None:
     try:
         _start_scheduler(app)
     except Exception:
-        logger.exception("Failed to start background scheduler")
-        raise
+        # Планировщик не должен мешать запуску веб-приложения: без него
+        # приложение работает, задания просто не выполняются.
+        logger.exception(
+            "Failed to start background scheduler; continuing without it "
+            "(если база новая, примените миграции: flask db upgrade)"
+        )
+        _abort_scheduler_start(app)
+        return
 
     atexit.register(lambda: _shutdown_scheduler(app))
 
 
+def _abort_scheduler_start(app) -> None:
+    global _scheduler
+    scheduler = app.extensions.pop("scheduler", None)
+    if scheduler:
+        try:
+            scheduler.shutdown(wait=False)
+        except Exception:
+            logger.warning("Failed to stop partially started scheduler", exc_info=True)
+    _scheduler = None
+    _release_lock()
+
+
+def _release_lock() -> None:
+    global _lock_file
+    if not _lock_file:
+        return
+    try:
+        fcntl.flock(_lock_file.fileno(), fcntl.LOCK_UN)
+        _lock_file.close()
+    except OSError:
+        pass
+    _lock_file = None
+
+
 def _shutdown_scheduler(app) -> None:
-    global _scheduler, _lock_file
+    global _scheduler
     try:
         with app.app_context():
             _mark_own_running_runs_interrupted()
@@ -485,10 +524,4 @@ def _shutdown_scheduler(app) -> None:
     if scheduler:
         scheduler.shutdown(wait=False)
     _scheduler = None
-    if _lock_file:
-        try:
-            fcntl.flock(_lock_file.fileno(), fcntl.LOCK_UN)
-            _lock_file.close()
-        except OSError:
-            pass
-        _lock_file = None
+    _release_lock()

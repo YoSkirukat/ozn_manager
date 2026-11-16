@@ -175,7 +175,8 @@ def fbs_package_label():
     if not order:
         return jsonify({"ok": False, "error": "Заказ не найден."}), 404
 
-    result = load_fbs_label(current_user, order)
+    with priority_requests():
+        result = load_fbs_label(current_user, order)
     if not result.get("ok"):
         return jsonify({"ok": False, "error": result.get("error")}), 400
 

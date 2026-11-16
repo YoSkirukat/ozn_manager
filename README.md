@@ -123,6 +123,20 @@ gunicorn -w 4 -b 0.0.0.0:8000 wsgi:app
 
 Для новой БД без существующих миграций: `flask db init`, затем `flask db migrate` и `flask db upgrade`.
 
+### Если база создана, но таблиц нет
+
+Ошибка `sqlite3.OperationalError: no such table: ...` означает, что миграции не применены.
+Планировщик в этом случае не мешает запуску (в лог пишется предупреждение, задания не выполняются),
+но приложению нужна схема:
+
+```bash
+export FLASK_APP=wsgi:app
+flask db upgrade
+flask create-admin
+```
+
+Проверить применённую ревизию: `flask db current`.
+
 ## Переменные окружения
 
 | Переменная | Описание |
